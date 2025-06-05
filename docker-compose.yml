@@ -1,0 +1,125 @@
+version: "3.9"
+
+services:
+  api:
+    build: 
+      context: .
+      target: final # As defined in the Dockerfile
+    env_file:
+      - .env # Ensure .env file is used
+    ports: 
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy # Changed from service_started to service_healthy for MinIO
+    volumes:
+      - ./app:/code/app:ro  # For development hot reload (read-only for safety)
+                            # If uvicorn --reload is used, this mount should be rw or reload won't pick up changes.
+                            # The command uses --reload, so it should be rw.
+      # Correcting volume mount for hot reload based on typical uvicorn --reload usage:
+      - ./app:/code/app # :rw is default, suitable for reload
+    # The entrypoint.sh handles migrations and then starts the app.
+    # The command in Dockerfile is CMD ["uvicorn", ...], overridden by entrypoint.sh if entrypoint is used as CMD/ENTRYPOINT.
+    # Here, the command for the api service should be what entrypoint.sh expects as arguments for the api.
+    command: ["./entrypoint.sh", "uvicorn", "app.api_server:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s # Added start_period to give time for migrations/startup
+
+  worker:
+    build: 
+      context: .
+      target: final
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy # Changed from service_started
+    # Command for worker, executed by entrypoint.sh
+    command: ["./entrypoint.sh", "celery", "-A", "app.tasks.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    volumes:
+      - ./app:/code/app # Mount app code for consistency, :ro if worker doesn't need to write/reload from source
+
+  beat:
+    build: 
+      context: .
+      target: final
+    env_file: 
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      db: # Beat might also need DB access for some initial setup or dynamic scheduling
+        condition: service_healthy
+    # Command for beat, executed by entrypoint.sh
+    command: ["./entrypoint.sh", "celery", "-A", "app.tasks.celery_app", "beat", "--loglevel=info"]
+    volumes:
+      - ./app:/code/app # Mount app code for consistency
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jobagent_user} # Added default values
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-jobagent}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports: 
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-jobagent_user} -d $${POSTGRES_DB:-jobagent}"] # Escaped $ and added defaults
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    ports: 
+      - "9000:9000" # S3 API
+      - "9001:9001" # MinIO Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin} # Added defaults
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # MINIO_DEFAULT_BUCKETS: "${S3_BUCKET_NAME:-job-agent-documents}" # Alternative to ensure_bucket_exists
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      # Test for MinIO readiness. /minio/health/live is standard.
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 30s # Give MinIO time to start
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  default:
+    name: jobagent_network 

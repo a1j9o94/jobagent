@@ -1,0 +1,67 @@
+# Docker ignore rules
+
+# Git files
+.git
+.gitignore
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.test.yml
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE and editor specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Test reports and coverage
+htmlcov/
+.coverage
+.pytest_cache/
+
+# Secrets and local configurations
+.env
+*.env
+.env.*
+!env.sample # but do include env.sample if you have one and want it in image context (usually not needed)
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Log files
+*.log
+logs/
+
+# Node.js specific (if ever used for frontend parts)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# alembic/versions will be populated by alembic, not part of source usually copied
+# alembic/versions/
+
+# Entrypoint script if it's only for dev or specific compose setups
+# entrypoint.sh # Keep if it IS part of the build context needed for final image
+
+# README and design docs (unless needed in image)
+README.md
+design_doc.md 

@@ -1,10 +1,103 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+*.py[cod]
+*$py.class
 
-# Virtual environments
+# Environments
+.env
 .venv
+env/
+venv/
+ENV/
+
+# IDEs and editors
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-project
+*.sublime-workspace
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are created by PyInstaller, if you are using PyInstaller
+#  you probably don't want to ignore them
+# *.manifest
+# *.spec
+
+# Pytest
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# MyPy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# dotenv
+.env
+.env.*
+!.env.sample
+!.env.test.sample
+
+# Local settings
+local_settings.py
+
+# Log files
+*.log
+logs/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# secrets, sensitive files - should be in .env mostly
+secrets.json
+*.pem
+*.key
+
+# Docker related from build context, if not needed in repo
+# Dockerfile # Usually committed
+# docker-compose.yml # Usually committed
+# .dockerignore # Usually committed
+
+# alembic/versions - these are generated and should be committed
+# alembic/versions/
+
+# design_doc.md and README.md are usually committed
+# design_doc.md
+# README.md

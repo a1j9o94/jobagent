@@ -1,0 +1,75 @@
+services:
+  test_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${TEST_POSTGRES_USER:-test_user} # Added defaults and TEST_ prefix
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:-test_password}
+      POSTGRES_DB: ${TEST_POSTGRES_DB:-test_jobagent}
+    ports:
+      - "5433:5432" # Expose on a different host port to avoid conflict with main db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${TEST_POSTGRES_USER:-test_user} -d $${TEST_POSTGRES_DB:-test_jobagent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  test_redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379" # Expose on a different host port
+    healthcheck: # Added healthcheck for redis
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  tests:
+    build: 
+      context: .
+      target: final # Use the same final image as the app
+    env_file:
+      - .env # Load main .env for any shared configs if necessary
+      - .env.test # Specific test overrides
+    environment:
+      # These should ideally come from .env.test or be prefixed to avoid clashes if .env is also loaded.
+      # The conftest.py sets some of these via os.environ.update.
+      # For docker-compose, it's better to manage them via env files or direct environment block.
+      DATABASE_URL: "postgresql+psycopg2://${TEST_POSTGRES_USER:-test_user}:${TEST_POSTGRES_PASSWORD:-test_password}@test_db:5432/${TEST_POSTGRES_DB:-test_jobagent}"
+      REDIS_URL: "redis://test_redis:6379/0"
+      # API keys and other secrets for tests:
+      PROFILE_INGEST_API_KEY: "test-api-key" # As in conftest
+      ENCRYPTION_KEY: "9EoWk9dreMuSFwVtkcgiQXwG8iZdZcOZZppkDnw1HWs=" # Valid Fernet-generated key for tests
+      OPENAI_API_KEY: "test-openai-key"
+      # S3/MinIO vars for tests (if tests interact with storage client, even if mocked)
+      S3_ENDPOINT_URL: "http://test_minio:9000" # If a test minio service were added
+      AWS_ACCESS_KEY_ID: "testminioadmin"
+      AWS_SECRET_ACCESS_KEY: "testminioadmin"
+      S3_BUCKET_NAME: "test-job-agent-documents"
+      # Twilio vars for tests
+      TWILIO_ACCOUNT_SID: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      TWILIO_AUTH_TOKEN: "test_twilio_auth_token_here"
+      WA_FROM: "whatsapp:+14155238886"
+      WA_TO: "whatsapp:+12345678900"
+      # Add any other specific test environment variables
+      PYTHONPATH: "/code" # Ensure app code is importable
+      DB_ECHO: "false"
+    depends_on:
+      test_db:
+        condition: service_healthy
+      test_redis:
+        condition: service_healthy # Wait for redis to be healthy
+    # The command from the design doc runs pytest.
+    # entrypoint.sh is not strictly needed if migrations aren't run against the test DB via this service.
+    # However, if `wait_for_service` or other setup in entrypoint.sh is desired, it could be used.
+    # For simplicity, directly running pytest is common for a `tests` service.
+    command: ["pytest", "-v", "--tb=short", "tests/"] # Target tests directory
+    volumes:
+      # Mount app and tests code for easy test development
+      - ./app:/code/app:ro
+      - ./tests:/code/tests:ro 
+      # Coverage reports or other test artifacts can be mounted out if needed:
+      # - ./coverage_reports:/code/coverage_reports
+
+# Note: This test compose file does not include a MinIO instance for tests.
+# If your tests require a live S3-compatible store, you would add a `test_minio` service similar to the main compose file.
+# The S3_ENDPOINT_URL above assumes such a service or relies on mocks/local MinIO outside this compose. 

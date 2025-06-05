@@ -1,7 +1,86 @@
 [project]
 name = "jobagent"
 version = "0.1.0"
-description = "Add your description here"
+description = "A sophisticated, automated job application agent."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+license = "MIT"
+authors = [
+    { name = "Your Name", email = "you@example.com" }
+]
+keywords = ["job agent", "automation", "fastapi", "celery", "playwright"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Topic :: Office/Business :: Scheduling",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "fastapi==0.104.1",
+    "uvicorn[standard]==0.24.0",
+    "pydantic[email]==2.10.0",
+    "sqlmodel==0.0.14",
+    "alembic==1.12.1",
+    "psycopg2-binary==2.9.9",
+    "celery[redis]==5.3.4",
+    "redis==4.6.0",
+    "pydantic-ai==0.0.12",
+    "openai==1.54.3",
+    "playwright==1.40.0",
+    "weasyprint==60.2",
+    "markdown==3.5.1",
+    "boto3==1.34.0",
+    "twilio==8.10.0",
+    "cryptography==41.0.7",
+    "slowapi==0.1.9",
+    "python-dotenv==1.0.0",
+    "structlog==23.2.0",
+    "pytest==7.4.3",
+    "pytest-asyncio==0.21.1",
+    "pytest-mock==3.12.0",
+    "httpx==0.27.2",
+    "factory-boy==3.3.0",
+    "testcontainers==3.7.1",
+    "ruff==0.11.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/jobagent"
+Documentation = "https://github.com/yourusername/jobagent/blob/main/README.md"
+Repository = "https://github.com/yourusername/jobagent.git"
+"Bug Tracker" = "https://github.com/yourusername/jobagent/issues"
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+backend-path = ["."]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["alembic*", "tests*"]
+
+[project.optional-dependencies]
+dev = [
+    "ty",
+    "ipython==8.17.2",
+    "pytest==7.4.3",
+    "pytest-asyncio==0.21.1",
+    "pytest-mock==3.12.0",
+    "httpx==0.27.2"
+]
+
+[tool.poe.tasks]
+test = "docker compose -f docker-compose.test.yml up --build --abort-on-container-exit"
+
+[dependency-groups]
+dev = [
+    "poethepoet>=0.34.0",
+]
+
+# Optional: Configuration for tools like Ruff, MyPy can also go here
+# warn_unused_configs = true
