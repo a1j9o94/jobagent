@@ -81,6 +81,22 @@ deploy = "bash deploy.sh"
 deploy-check = "flyctl status --app jobagent"
 deploy-logs = "flyctl logs --app jobagent"
 deploy-ssh = "flyctl ssh console --app jobagent"
+logs-local = "docker compose logs -f"
+stop-local = "docker compose down"
+
+[tool.poe.tasks.run-local]
+shell = """
+docker compose up --build -d
+sleep 5
+docker compose exec minio mc mb /data/job-agent-documents --ignore-existing || true
+echo '🎉 Job Agent running locally!'
+echo '📋 Access your services:'
+echo '  • API: http://localhost:8000/docs'
+echo '  • Health: http://localhost:8000/health'
+echo '  • MinIO: http://localhost:9001 (admin/minioadmin)'
+echo '📝 View logs: uv run poe logs-local'
+echo '🛑 Stop services: uv run poe stop-local'
+"""
 
 [tool.pytest.ini_options]
 # Suppress external library warnings that we can't control

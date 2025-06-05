@@ -69,6 +69,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=True)
 PROFILE_INGEST_API_KEY = os.getenv("PROFILE_INGEST_API_KEY", "default-key")
 
+# Base URL for API examples - automatically detects environment
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+
 
 async def get_api_key(api_key: str = Depends(API_KEY_HEADER)):
     if api_key != PROFILE_INGEST_API_KEY:
@@ -88,7 +91,21 @@ def redis_health_check() -> bool:
     except Exception as e:
         logger.error(f"Redis health check failed: {e}")
         return False
-
+    
+# Root route, that just shows if the app is running, the list of routes, and an example of how to use the ingest endpoint
+@app.get("/", summary="Root route", tags=["System"])
+async def root():
+    return {
+        "status": "ok",
+        "message": "Job Agent API is running",
+        "routes": [{"path": "/ingest/profile", "method": "POST", "description": "Ingest a user's full profile"}],
+        "example": {
+            "method": "POST",
+            "url": f"{API_BASE_URL}/ingest/profile",
+            "headers": {"X-API-Key": "your-api-key"},
+            "body": {"headline": "Software Engineer", "summary": "I am a software engineer with 5 years of experience in Python and Django"}
+        }
+    }
 
 @app.get("/health", summary="Comprehensive Health Check", tags=["System"])
 async def health_check_endpoint():  # Renamed to avoid conflict with imported health_check functions

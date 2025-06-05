@@ -228,14 +228,15 @@ fi
 
 print_status "Updating fly.toml configuration..."
 
-# Update fly.toml with correct bucket name if needed
-if [ -n "${BUCKET_NAME}" ]; then
-    # Update S3_BUCKET_NAME in fly.toml to match actual bucket
-    if grep -q "S3_BUCKET_NAME.*=" fly.toml; then
-        sed -i.bak "s/S3_BUCKET_NAME = .*/S3_BUCKET_NAME = \"${BUCKET_NAME}\"/" fly.toml
-        print_success "Updated S3_BUCKET_NAME in fly.toml to: ${BUCKET_NAME}"
-    fi
+# Update fly.toml with the correct S3 bucket name
+if [ -n "$BUCKET_NAME" ]; then
+    sed -i.bak "s/S3_BUCKET_NAME = \".*\"/S3_BUCKET_NAME = \"$BUCKET_NAME\"/" fly.toml
+    print_success "Updated S3_BUCKET_NAME in fly.toml to: $BUCKET_NAME"
 fi
+
+# Update API_BASE_URL in fly.toml
+sed -i.bak "s/API_BASE_URL = \".*\"/API_BASE_URL = \"https:\/\/${APP_NAME}.fly.dev\"/" fly.toml
+print_success "Updated API_BASE_URL in fly.toml to: https://${APP_NAME}.fly.dev"
 
 print_status "Deploying application..."
 

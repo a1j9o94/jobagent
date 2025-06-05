@@ -1,4 +1,5 @@
 # tests/e2e/test_api.py
+import os
 import pytest
 import json  # For health check response parsing
 from fastapi.testclient import TestClient
@@ -19,6 +20,24 @@ from app.tasks import celery_app  # For disabling celery tasks during tests if n
 # This can be done globally in conftest.py or per test module/class if needed.
 # For now, assuming tasks are either mocked or their immediate execution is fine.
 
+# Base URL for API examples - automatically detects environment
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+
+
+class TestRootEndpoint:
+    def test_root_endpoint(self, client: TestClient):
+        response = client.get("/")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["message"] == "Job Agent API is running"
+        assert data["routes"] == [{"path": "/ingest/profile", "method": "POST", "description": "Ingest a user's full profile"}]
+        assert data["example"] == {
+            "method": "POST",
+            "url": f"{API_BASE_URL}/ingest/profile",
+            "headers": {"X-API-Key": "your-api-key"},
+            "body": {"headline": "Software Engineer", "summary": "I am a software engineer with 5 years of experience in Python and Django"}
+        }
 
 class TestHealthEndpoint:
     def test_health_check_success(self, client: TestClient):

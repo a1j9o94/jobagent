@@ -114,7 +114,12 @@ if [ "$MAIN_COMMAND" = "uvicorn" ]; then # API service
     SHOULD_WAIT_FOR_DB=true
     SHOULD_WAIT_FOR_REDIS=true # API might use Redis for caching or other things
     SHOULD_RUN_MIGRATIONS=true
-    SHOULD_INIT_MINIO=false  # Use external S3 service (Tigris), no need to wait for local MinIO
+    # Enable MinIO bucket creation for local development
+    if [[ "${S3_ENDPOINT_URL:-}" == *"minio"* ]] || [[ "${S3_ENDPOINT_URL:-}" == *"localhost"* ]] || [[ "${S3_ENDPOINT_URL:-}" == *"127.0.0.1"* ]]; then
+        SHOULD_INIT_MINIO=true  # Local MinIO setup
+    else
+        SHOULD_INIT_MINIO=false  # Use external S3 service (Tigris), no need to wait for local MinIO
+    fi
 elif [ "$MAIN_COMMAND" = "celery" ]; then # Worker or Beat service
     SHOULD_WAIT_FOR_DB=true  # Celery tasks likely interact with DB
     SHOULD_WAIT_FOR_REDIS=true # Celery requires Redis broker
@@ -140,6 +145,33 @@ fi
 # Run database migrations for the API service
 if [ "$SHOULD_RUN_MIGRATIONS" = true ]; then
     echo "🔄 Running database migrations..."
+    
+    # Check if we have any migration files
+    MIGRATION_COUNT=$(find alembic/versions -name "*.py" -not -name "__*" | wc -l)
+    
+    if [ "$MIGRATION_COUNT" -eq 0 ]; then
+        echo "📋 No migration files found. Generating initial database schema..."
+        
+        # Generate initial migration from SQLModel models
+        if alembic revision --autogenerate -m "Initial database schema"; then
+            echo "✅ Initial migration generated successfully."
+            
+            # Fix common SQLModel import issue in generated migration
+            LATEST_MIGRATION=$(find alembic/versions -name "*.py" -not -name "__*" | sort | tail -1)
+            if [ -n "$LATEST_MIGRATION" ]; then
+                echo "🔧 Fixing SQLModel imports in generated migration..."
+                sed -i 's/from alembic import op/from alembic import op\nimport sqlmodel.sql.sqltypes/' "$LATEST_MIGRATION"
+                echo "✅ Migration imports fixed."
+            fi
+        else
+            echo "❌ Failed to generate initial migration. Exiting."
+            exit 1
+        fi
+    else
+        echo "📋 Found $MIGRATION_COUNT existing migration file(s)."
+    fi
+    
+    # Run migrations to update database to latest schema
     if alembic -c alembic.ini upgrade head; then
         echo "✅ Database migrations completed successfully."
     else
@@ -151,9 +183,30 @@ fi
 # Initialize MinIO bucket if this is the API service (or a dedicated init job)
 if [ "$SHOULD_INIT_MINIO" = true ]; then
     echo "🪣 Initializing object storage bucket (if not exists)..."
-    # For external S3 services like Tigris, we don't need to wait for a local service
-    # Just try to ensure the bucket exists using the Python API
-    python -c "
+    
+    # Check if this is local MinIO vs external S3
+    if [[ "${S3_ENDPOINT_URL:-}" == *"minio"* ]] || [[ "${S3_ENDPOINT_URL:-}" == *"localhost"* ]] || [[ "${S3_ENDPOINT_URL:-}" == *"127.0.0.1"* ]]; then
+        # Local MinIO setup
+        echo "🔧 Detected local MinIO, creating bucket using mc command..."
+        
+        # Wait for MinIO to be ready
+        MINIO_HOST=$(echo "${S3_ENDPOINT_URL}" | sed 's|http://||' | sed 's|https://||' | cut -d':' -f1)
+        MINIO_PORT=$(echo "${S3_ENDPOINT_URL}" | sed 's|http://||' | sed 's|https://||' | cut -d':' -f2)
+        
+        # Default to minio:9000 if parsing fails
+        MINIO_HOST="${MINIO_HOST:-minio}"
+        MINIO_PORT="${MINIO_PORT:-9000}"
+        
+        wait_for_service "$MINIO_HOST" "$MINIO_PORT" "MinIO"
+        
+        # Create bucket using mc command (MinIO client)
+        # Note: This assumes mc is available in the container, which it might not be
+        # For local development, it's better to create the bucket externally
+        echo "✅ MinIO is ready. Bucket creation should be handled by docker-compose setup."
+        echo "💡 If bucket doesn't exist, run: docker compose exec minio mc mb /data/${S3_BUCKET_NAME} --ignore-existing"
+    else
+        # External S3 services like Tigris - use Python API
+        python -c "
 import logging
 # Configure basic logging for the init script
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -187,6 +240,7 @@ except Exception as e:
     logger.warning('S3 storage initialization encountered an issue: %s. Continuing startup.', e)
     logger.info('✅ S3 connectivity will be handled at runtime.')
 "
+    fi
     echo "✅ S3 storage initialization completed."
 fi
 
