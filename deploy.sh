@@ -165,14 +165,29 @@ fi
 
 print_status "Setting environment variables and secrets..."
 
+# Get existing secrets to avoid re-generating them on every deploy
+EXISTING_SECRETS=$(flyctl secrets list --app "${APP_NAME}")
+
 # Prepare secrets array
 SECRETS_TO_SET=()
 
-# Add basic secrets
-SECRETS_TO_SET+=(
-    "PROFILE_INGEST_API_KEY=$(openssl rand -hex 32)"
-    "ENCRYPTION_KEY=$(openssl rand -base64 32)"
-)
+# Check for PROFILE_INGEST_API_KEY
+if ! echo "$EXISTING_SECRETS" | grep -q "^PROFILE_INGEST_API_KEY "; then
+    NEW_API_KEY=$(openssl rand -hex 32)
+    SECRETS_TO_SET+=("PROFILE_INGEST_API_KEY=${NEW_API_KEY}")
+    DISPLAY_API_KEY=$NEW_API_KEY # Store for displaying later
+    print_warning "Generated new PROFILE_INGEST_API_KEY."
+else
+    print_success "PROFILE_INGEST_API_KEY already set."
+fi
+
+# Check for ENCRYPTION_KEY
+if ! echo "$EXISTING_SECRETS" | grep -q "^ENCRYPTION_KEY "; then
+    SECRETS_TO_SET+=("ENCRYPTION_KEY=$(openssl rand -base64 32)")
+    print_warning "Generated new ENCRYPTION_KEY."
+else
+    print_success "ENCRYPTION_KEY already set."
+fi
 
 # Add user-provided secrets with validation
 if [ -n "${TWILIO_ACCOUNT_SID:-}" ] && [ "${TWILIO_ACCOUNT_SID}" != "your-twilio-sid" ]; then
@@ -273,6 +288,17 @@ echo "  • Database: ${DB_NAME}"
 echo "  • Redis: ${REDIS_NAME}"
 echo "  • Storage: ${BUCKET_NAME}"
 echo "  • URL: ${APP_URL}"
+
+echo ""
+print_status "🔑 API Key Information:"
+if [ -n "$DISPLAY_API_KEY" ]; then
+    echo -e "${GREEN}✅ Your new API Key has been generated and set:${NC}"
+    echo -e "  ${YELLOW}PROFILE_INGEST_API_KEY=${DISPLAY_API_KEY}${NC}"
+    print_warning "Save this key, it will not be shown again!"
+else
+    echo "  Your API key is already configured. To retrieve it, run:"
+    echo -e "  ${BLUE}flyctl secrets list --app ${APP_NAME} | grep PROFILE_INGEST_API_KEY${NC}"
+fi
 
 echo ""
 print_status "🛠️  Useful commands:"
