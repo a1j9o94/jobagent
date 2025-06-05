@@ -38,6 +38,10 @@ if not db_url:
         "DATABASE_URL environment variable or sqlalchemy.url in alembic.ini must be set."
     )
 
+# Fix for Fly.io: convert postgres:// to postgresql:// for SQLAlchemy compatibility
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
 config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = SQLModel.metadata

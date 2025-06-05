@@ -77,6 +77,10 @@ dev = [
 
 [tool.poe.tasks]
 test = "docker compose -f docker-compose.test.yml up --build --abort-on-container-exit"
+deploy = "bash deploy.sh"
+deploy-check = "flyctl status --app jobagent"
+deploy-logs = "flyctl logs --app jobagent"
+deploy-ssh = "flyctl ssh console --app jobagent"
 
 [tool.pytest.ini_options]
 # Suppress external library warnings that we can't control

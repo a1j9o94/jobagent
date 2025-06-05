@@ -1,0 +1,74 @@
+# Fly.io ignore file - similar to .dockerignore
+# Exclude files that shouldn't be deployed to Fly.io
+
+# Development files
+.env*
+.env.example
+.env.fly.example
+docker-compose*.yml
+Dockerfile.dev
+
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+docs/
+design_doc.md
+
+# Development tools
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+tests/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Logs
+*.log
+logs/
+
+# Local development
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Note: alembic/ and alembic.ini are NOT excluded - they're needed for migrations 

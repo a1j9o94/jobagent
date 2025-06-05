@@ -28,8 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy project files needed for installation
-COPY pyproject.toml entrypoint.sh ./
+COPY pyproject.toml entrypoint.sh alembic.ini ./
 COPY app/ ./app/
+COPY alembic/ ./alembic/
 
 # Using --system to install to system Python, common for Docker images
 # Using --no-cache as good practice for builders, though uv handles caching differently than pip

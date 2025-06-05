@@ -1,7 +1,7 @@
 # app/db.py
 import os
 import logging
-from sqlmodel import create_engine, Session, SQLModel
+from sqlmodel import create_engine, Session, SQLModel, text
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
@@ -9,6 +9,10 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required")
+
+# Fix for Fly.io: convert postgres:// to postgresql:// for SQLAlchemy compatibility
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Create engine with connection pooling
 engine = create_engine(
@@ -41,7 +45,7 @@ def health_check() -> bool:
     """Check if database is accessible."""
     try:
         with Session(engine) as session:
-            session.exec("SELECT 1")
+            session.exec(text("SELECT 1"))
         return True
     except Exception as e:
         logger.error(f"Database health check failed: {e}")

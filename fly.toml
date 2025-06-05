@@ -1,0 +1,48 @@
+app = "jobagent"
+primary_region = "sea"  # Change to your preferred region (sea, ord, fra, etc.)
+
+[build]
+  dockerfile = "Dockerfile"
+  target = "final"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[processes]
+  app = "./entrypoint.sh uvicorn app.api_server:app --host 0.0.0.0 --port 8000"
+  worker = "./entrypoint.sh celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2"
+  beat = "./entrypoint.sh celery -A app.tasks.celery_app beat --loglevel=info"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-2x"
+  processes = ["worker", "beat"]
+
+[env]
+  PORT = "8000"
+  ENVIRONMENT = "production"
+  S3_ENDPOINT_URL = "https://fly.storage.tigris.dev"
+  S3_BUCKET_NAME = "jobagent-storage"
+  AWS_REGION = "auto"
+
+[deploy]
+  release_command = "./entrypoint.sh alembic upgrade head"
+
+[mounts]
+  source = "jobagent_data"
+  destination = "/data" 
