@@ -1,10 +1,15 @@
 # app/models.py
 from enum import Enum
-from datetime import datetime, date
+from datetime import datetime, date, UTC
 from typing import List, Optional, Set, Dict, Any
 from sqlmodel import SQLModel, Field, Relationship, Column, String, Text
 from pydantic import BaseModel, SecretStr
 import sqlalchemy as sa
+
+
+def utc_now() -> datetime:
+    """Return current UTC time as timezone-aware datetime."""
+    return datetime.now(UTC)
 
 
 # --- Enums ---
@@ -105,7 +110,7 @@ class Role(SQLModel, table=True):
     rank_score: Optional[float] = None
     rank_rationale: Optional[str] = Field(default=None, sa_column=Column(Text))
     company_id: int = Field(foreign_key="company.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
     company: Company = Relationship(back_populates="roles")
     skills: List[Skill] = Relationship(link_model=RoleSkillLink)
@@ -124,7 +129,7 @@ class Application(SQLModel, table=True):
         default_factory=dict, sa_column=Column(sa.JSON)
     )
     submitted_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
     role: Role = Relationship(back_populates="applications")
     profile: "Profile" = Relationship(back_populates="applications")
@@ -135,7 +140,7 @@ class UserPreference(SQLModel, table=True):
     profile_id: int = Field(foreign_key="profile.id")
     key: str = Field(index=True)
     value: str
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=utc_now)
 
     profile: "Profile" = Relationship(back_populates="preferences")
 
@@ -144,8 +149,8 @@ class Profile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     headline: str
     summary: str = Field(sa_column=Column(Text))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     credentials: List[Credential] = Relationship()
     preferences: List[UserPreference] = Relationship(back_populates="profile")

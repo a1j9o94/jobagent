@@ -2,7 +2,7 @@
 import os
 import hashlib
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Dict, Any, Optional
 from sqlmodel import Session, select
 from pydantic_ai import Agent, RunContext
@@ -299,13 +299,13 @@ def save_user_preference(profile_id: int, key: str, value: str) -> None:
 
         if pref:
             pref.value = value
-            pref.last_updated = datetime.utcnow()
+            pref.last_updated = datetime.now(UTC)
         else:
             pref = UserPreference(
                 profile_id=profile_id, 
                 key=key, 
                 value=value,
-                last_updated=datetime.utcnow()
+                last_updated=datetime.now(UTC)
             )
             session.add(pref)
 

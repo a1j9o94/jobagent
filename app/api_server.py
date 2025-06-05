@@ -1,7 +1,7 @@
 # app/api_server.py
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, Any, Optional, List
 from fastapi import (
     FastAPI,
@@ -95,7 +95,7 @@ async def health_check_endpoint():  # Renamed to avoid conflict with imported he
     """Check the health of all system components."""
     health_status = {
         "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "services": {
             "database": db_health_check(),
             "redis": redis_health_check(),
@@ -162,13 +162,13 @@ async def ingest_profile_data(
             existing_profile.summary = profile_data.get(
                 "summary", existing_profile.summary
             )
-            existing_profile.updated_at = datetime.utcnow()
+            existing_profile.updated_at = datetime.now(UTC)
             session.add(existing_profile)  # ensure changes are staged
             session.commit()  # Commit the profile update first
             profile_id = existing_profile.id
         else:
             # Create new profile
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             new_profile = Profile(
                 headline=profile_data.get("headline", ""),
                 summary=profile_data.get("summary", ""),
@@ -199,13 +199,13 @@ async def ingest_profile_data(
                 
                 if existing_pref:
                     existing_pref.value = str(value)
-                    existing_pref.last_updated = datetime.utcnow()
+                    existing_pref.last_updated = datetime.now(UTC)
                 else:
                     new_pref = UserPreference(
                         profile_id=profile_id,
                         key=key,
                         value=str(value),
-                        last_updated=datetime.utcnow()
+                        last_updated=datetime.now(UTC)
                     )
                     session.add(new_pref)
             

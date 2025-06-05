@@ -1,6 +1,7 @@
 # tests/unit/test_tools.py
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
+from datetime import datetime, UTC
 from sqlmodel import select  # Added for SQLModel queries
 from app.tools import (
     generate_unique_hash,
@@ -47,12 +48,11 @@ class TestTools:
     def test_get_user_preference_exists(self, session, sample_profile):
         """Test retrieving an existing user preference."""
         # Create a preference using the fixture data or directly
-        from datetime import datetime
         pref = UserPreference(
             profile_id=sample_profile.id, 
             key="salary_expectation", 
             value="120000",
-            last_updated=datetime.utcnow()
+            last_updated=datetime.now(UTC)
         )
         session.add(pref)
         session.commit()

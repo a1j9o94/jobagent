@@ -5,7 +5,7 @@ import asyncio
 from typing import Generator, AsyncGenerator
 import pytest
 from unittest.mock import patch
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlmodel import Session, create_engine, SQLModel
@@ -109,8 +109,8 @@ def sample_profile_data() -> dict:
     return {
         "headline": "Senior Software Engineer | Python & Cloud",
         "summary": "Experienced engineer specializing in building scalable backend systems.",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
     }
 
 @pytest.fixture
@@ -146,7 +146,7 @@ def sample_role_data(sample_company: Company) -> dict:
         "posting_url": "https://techcorp.com/jobs/senior-python-dev",
         "unique_hash": "test_hash_123",
         "company_id": sample_company.id,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(UTC),
     }
 
 @pytest.fixture
@@ -182,7 +182,7 @@ def sample_user_preference_data(sample_profile: Profile) -> dict:
         "profile_id": sample_profile.id,
         "key": "salary_expectation",
         "value": "150000",
-        "last_updated": datetime.utcnow(),
+        "last_updated": datetime.now(UTC),
     }
 
 @pytest.fixture
