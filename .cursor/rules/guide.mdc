@@ -1,0 +1,230 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Job Application Agent - Cursor Rules
+
+You are an expert in Python, FastAPI, SQLModel, Celery, and AI-powered automation systems. You specialize in building scalable job application automation with browser automation, document generation, and WhatsApp integration.
+
+## Key Principles
+- Write concise, technical responses with accurate Python examples.
+- Use functional, declarative programming; avoid classes where functions suffice.
+- Prefer iteration and modularization over code duplication.
+- Use descriptive variable names with auxiliary verbs (e.g., is_submitted, has_credentials, should_retry).
+- Use lowercase with underscores for directories and files (e.g., app/tools.py, tests/unit/test_automation.py).
+- Favor named exports for functions and clear module organization.
+- Use the Receive an Object, Return an Object (RORO) pattern for complex functions.
+- Follow async-first patterns for I/O operations (database, LLM calls, browser automation).
+
+## Python/FastAPI/SQLModel
+- Use `def` for pure functions and `async def` for asynchronous operations.
+- Use type hints for all function signatures. Prefer SQLModel/Pydantic models over raw dictionaries.
+- File structure: models → database → tools → tasks → api routes → tests.
+- Use SQLModel for database models to get both SQLAlchemy ORM and Pydantic validation.
+- Leverage FastAPI's dependency injection for database sessions and authentication.
+- Use contextlib for resource management (database sessions, browser instances, file handles).
+
+## Error Handling and Validation
+- Prioritize error handling and edge cases:
+  - Handle errors and edge cases at the beginning of functions.
+  - Use early returns for error conditions to avoid deeply nested if statements.
+  - Place the happy path last in the function for improved readability.
+  - Avoid unnecessary else statements; use the if-return pattern instead.
+  - Use guard clauses to handle preconditions and invalid states early.
+  - Implement proper error logging with structured logging.
+  - Use custom exception types for domain-specific errors (FormSubmissionError, DocumentGenerationError).
+  - Always handle LLM API failures gracefully with fallback responses.
+  - Implement retry logic with exponential backoff for transient failures.
+
+## Code Quality Tools
+- Use **ruff** for linting and formatting (replaces black, isort, flake8).
+- Use **mypy** for static type checking.
+- Configure ruff with aggressive settings for import sorting and code formatting.
+- Use type: ignore comments sparingly and with specific error codes.
+- Prefer explicit type annotations over type inference for public APIs.
+
+## Dependencies & Architecture
+### Core Stack
+- **FastAPI** - API framework with automatic OpenAPI docs
+- **SQLModel** - Database models with Pydantic validation
+- **Celery + Redis** - Async task processing and scheduling
+- **Playwright** - Browser automation for form submission
+- **pydantic-ai** - Structured LLM outputs for AI components
+- **WeasyPrint** - PDF generation from HTML/Markdown
+- **Twilio** - WhatsApp integration for HITL workflows
+- **boto3** - S3-compatible object storage (MinIO)
+- **Alembic** - Database migrations
+
+### Development Tools
+- **pytest + pytest-asyncio** - Testing framework with async support
+- **httpx** - HTTP client for API testing
+- **factory-boy** - Test data generation
+- **testcontainers** - Containerized test dependencies
+
+## FastAPI-Specific Guidelines
+- Use functional route handlers with clear dependency injection.
+- Use SQLModel models for request/response validation and database operations.
+- Implement comprehensive health checks that verify all service dependencies.
+- Use `async def` for all route handlers that perform I/O operations.
+- Leverage FastAPI's automatic API documentation with proper response models.
+- Use dependency injection for database sessions: `session: Session = Depends(get_session)`.
+- Implement rate limiting using slowapi for webhook endpoints.
+- Use middleware for CORS, logging, and error monitoring.
+- Structure responses consistently with status, data, and optional metadata.
+
+## Database & SQLModel Patterns
+- Use SQLModel for unified database and API models.
+- Implement proper foreign key relationships with `Relationship()`.
+- Use context managers for database sessions: `with get_session_context() as session:`.
+- Implement database health checks and connection pooling.
+- Use Alembic for version-controlled schema migrations.
+- Encrypt sensitive data (passwords, API keys) before database storage.
+- Use JSONB columns for flexible data storage (PostgreSQL).
+
+## Celery Task Patterns
+- Keep tasks focused and idempotent.
+- Use task binding (`bind=True`) for retry logic and task context.
+- Implement exponential backoff for retries: `countdown=2 ** self.request.retries`.
+- Use task result backends for tracking long-running operations.
+- Structure tasks to call domain functions rather than implementing logic directly.
+- Use task routing and priorities for different types of work.
+- Implement proper error handling and task failure notifications.
+
+## Browser Automation Best Practices
+- Use async context managers for browser lifecycle management.
+- Implement platform-specific form submission strategies (Greenhouse, Workday, Lever).
+- Take screenshots on automation failures for debugging.
+- Use explicit waits for dynamic content loading.
+- Implement headless browser mode for production efficiency.
+- Handle CAPTCHAs gracefully with fallback to manual intervention.
+- Use data attributes and stable selectors over CSS selectors when possible.
+
+## AI/LLM Integration Patterns
+- Use pydantic-ai for structured outputs from LLM calls.
+- Implement proper prompt engineering with system prompts and examples.
+- Handle LLM failures gracefully with fallback responses.
+- Use result types (Pydantic models) to ensure consistent LLM outputs.
+- Implement token usage monitoring and cost tracking.
+- Cache LLM responses when appropriate to reduce API calls.
+- Use async/await for all LLM API calls to avoid blocking.
+
+## WhatsApp/Webhook Security
+- Always validate webhook signatures from Twilio.
+- Implement rate limiting on webhook endpoints.
+- Use structured message parsing for command handling.
+- Store user preferences for improved automation over time.
+- Implement conversation state management for multi-step interactions.
+- Handle webhook retries and duplicate message detection.
+
+## Testing Strategies
+- Use test containers for integration testing with real databases.
+- Mock external API calls (LLM, Twilio, browser automation) in unit tests.
+- Implement fixtures for common test data (profiles, roles, applications).
+- Use pytest markers to separate unit tests from integration tests.
+- Test error conditions and edge cases thoroughly.
+- Use async test patterns for testing async functions.
+- Implement database rollback in test teardown.
+
+## Performance Optimization
+- Use async/await for all I/O-bound operations (database, HTTP, file operations).
+- Implement connection pooling for database and Redis connections.
+- Use lazy loading for large datasets and complex relationships.
+- Cache frequently accessed data with appropriate TTL.
+- Use bulk operations for database insertions and updates.
+- Implement proper indexing on frequently queried columns.
+- Monitor task queue lengths and processing times.
+
+## Security Considerations
+- Encrypt sensitive data using cryptography.fernet before storage.
+- Use secure API key authentication with proper key rotation.
+- Validate all webhook signatures to prevent tampering.
+- Implement proper CORS policies for API access.
+- Use environment variables for all secrets and configuration.
+- Sanitize all user inputs before processing or storage.
+- Implement audit logging for sensitive operations.
+
+## File Structure Conventions
+```
+app/
+├── models.py          # SQLModel database models
+├── db.py             # Database connection and session management
+├── security.py       # Encryption and authentication utilities
+├── storage.py        # Object storage (S3/MinIO) operations
+├── automation.py     # Browser automation with Playwright
+├── tools.py          # AI tools and business logic functions
+├── tasks.py          # Celery task definitions
+├── notifications.py  # WhatsApp/Twilio integration
+├── api_server.py     # FastAPI application and routes
+└── pdf_utils.py      # Document generation utilities
+
+tests/
+├── conftest.py       # Test configuration and fixtures
+├── unit/            # Unit tests for individual functions
+└── e2e/             # Integration tests for API endpoints
+```
+
+## Code Patterns
+
+### Database Operations
+```python
+# Use context managers for database sessions
+def get_user_preference(profile_id: int, key: str) -> Optional[str]:
+    with get_session_context() as session:
+        pref = session.exec(
+            select(UserPreference)
+            .where(UserPreference.profile_id == profile_id)
+            .where(UserPreference.key == key)
+        ).first()
+        return pref.value if pref else None
+```
+
+### Async Task Patterns
+```python
+@celery_app.task(bind=True, max_retries=3)
+def task_process_application(self, application_id: int):
+    try:
+        result = process_application(application_id)
+        return {"status": "success", "result": result}
+    except Exception as e:
+        if self.request.retries < self.max_retries:
+            countdown = 2 ** self.request.retries
+            raise self.retry(countdown=countdown, exc=e)
+        return {"status": "error", "message": str(e)}
+```
+
+### Browser Automation
+```python
+async def submit_job_application(posting_url: str, form_data: dict) -> dict:
+    async with BrowserAutomation() as browser:
+        try:
+            result = await browser.submit_form(posting_url, form_data)
+            return {"status": "success", "data": result}
+        except FormSubmissionError as e:
+            logger.error(f"Form submission failed: {e}")
+            return {"status": "error", "message": str(e)}
+```
+
+### LLM Integration
+```python
+async def rank_role(role: Role, profile: Profile) -> RankResult:
+    try:
+        prompt = f"Job: {role.title}\nProfile: {profile.headline}\nRate the match:"
+        result = await ranking_agent.run(prompt)
+        return result.data
+    except Exception as e:
+        logger.error(f"LLM ranking failed: {e}")
+        return RankResult(score=0.0, rationale=f"Error: {str(e)}")
+```
+
+## Key Conventions
+1. Use dependency injection for all shared resources (database, external APIs).
+2. Implement comprehensive error handling with structured logging.
+3. Use async patterns for all I/O operations to maintain system responsiveness.
+4. Structure code for testability with clear separation of concerns.
+5. Follow the principle of least privilege for API access and data exposure.
+6. Implement proper monitoring and health checks for all system components.
+7. Use type hints consistently and leverage mypy for static analysis.
+8. Follow ruff formatting rules for consistent code style.
+
+Refer to FastAPI, SQLModel, Celery, and Playwright documentation for implementation details and best practices.
