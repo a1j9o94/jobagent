@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy project files needed for installation
-COPY pyproject.toml entrypoint.sh alembic.ini ./
+COPY pyproject.toml entrypoint.sh alembic.ini release-tasks.sh ./
 COPY app/ ./app/
 COPY alembic/ ./alembic/
 
@@ -60,7 +60,7 @@ COPY --from=builder /code /code
 RUN useradd --create-home --shell /bin/bash jobagent
 
 # Make entrypoint executable and fix ownership
-RUN chmod +x entrypoint.sh && chown -R jobagent:jobagent /code /root/.cache/ms-playwright/
+RUN chmod +x entrypoint.sh release-tasks.sh && chown -R jobagent:jobagent /code /root/.cache/ms-playwright/
 
 USER jobagent
 

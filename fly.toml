@@ -42,7 +42,7 @@ primary_region = "sea"  # Change to your preferred region (sea, ord, fra, etc.)
   AWS_REGION = "auto"
 
 [deploy]
-  release_command = "./entrypoint.sh alembic upgrade head"
+  release_command = "./release-tasks.sh"
 
 [mounts]
   source = "jobagent_data"

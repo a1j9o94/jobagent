@@ -83,12 +83,42 @@ deploy-logs = "flyctl logs --app jobagent"
 deploy-ssh = "flyctl ssh console --app jobagent"
 logs-local = "docker compose logs -f"
 stop-local = "docker compose down"
+destroy-local = "docker compose down -v --remove-orphans"
 
 [tool.poe.tasks.run-local]
 shell = """
 docker compose up --build -d
-sleep 5
-docker compose exec minio mc mb /data/job-agent-documents --ignore-existing || true
+echo "⏳ Waiting for services to start..."
+sleep 8
+
+# Configure mc alias and create bucket, with retries
+echo "🪣 Configuring MinIO client and creating bucket..."
+n=0
+until [ "$n" -ge 5 ]
+do
+   # Configure the MinIO client alias inside the container to point to itself
+   # The alias 'local' will be used for subsequent commands
+   docker compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin > /dev/null 2>&1
+   
+   # Attempt to create the bucket using the new alias. The bucket name comes from your .env
+   output=$(docker compose exec minio mc mb local/job-agent-documents --ignore-existing 2>&1)
+   exit_code=$?
+   
+   if [ $exit_code -eq 0 ]; then
+      echo "✅ MinIO bucket 'job-agent-documents' is ready."
+      break
+   fi
+   
+   echo "   Attempt $((n+1)) failed. Retrying in 2s..."
+   echo "   Error: $output"
+   n=$((n+1))
+   sleep 2
+done
+
+if [ "$n" -ge 5 ]; then
+  echo "❌ Failed to create MinIO bucket after 5 attempts."
+fi
+
 echo '🎉 Job Agent running locally!'
 echo '📋 Access your services:'
 echo '  • API: http://localhost:8000/docs'
