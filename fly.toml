@@ -39,7 +39,6 @@ primary_region = "sea"  # Change to your preferred region (sea, ord, fra, etc.)
   API_BASE_URL = "https://jobagent.fly.dev"
   S3_ENDPOINT_URL = "https://fly.storage.tigris.dev"
   S3_BUCKET_NAME = "jobagent-storage"
-  AWS_REGION = "auto"
 
 [deploy]
   release_command = "./release-tasks.sh"
