@@ -14,24 +14,28 @@ if not DATABASE_URL:
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,  # Verify connections before use
-    pool_recycle=300,    # Recycle connections every 5 minutes
-    echo=os.getenv("DB_ECHO", "false").lower() == "true"
+    pool_recycle=300,  # Recycle connections every 5 minutes
+    echo=os.getenv("DB_ECHO", "false").lower() == "true",
 )
+
 
 def create_tables():
     """Create all tables. Used in tests and initial setup."""
     SQLModel.metadata.create_all(engine)
+
 
 def get_session():
     """Dependency for FastAPI to get database sessions."""
     with Session(engine) as session:
         yield session
 
+
 @contextmanager
 def get_session_context():
     """Context manager for database sessions outside of FastAPI."""
     with Session(engine) as session:
         yield session
+
 
 def health_check() -> bool:
     """Check if database is accessible."""
@@ -41,4 +45,4 @@ def health_check() -> bool:
         return True
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
-        return False 
+        return False

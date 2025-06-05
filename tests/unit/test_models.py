@@ -8,4 +8,4 @@
 
 # def test_application_status_transitions():
 #     # If there were specific methods on Application to change status
-#     pass 
+#     pass

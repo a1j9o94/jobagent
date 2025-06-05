@@ -6,6 +6,7 @@ from sqlmodel import SQLModel, Field, Relationship, Column, String, Text
 from pydantic import BaseModel, SecretStr
 import sqlalchemy as sa
 
+
 # --- Enums ---
 class RoleCategory(str, Enum):
     SALES = "sales"
@@ -15,15 +16,18 @@ class RoleCategory(str, Enum):
     FINANCE = "finance"
     OTHER = "other"
 
+
 class Seniority(str, Enum):
     IC = "individual_contributor"
     MANAGER = "people_manager"
     EXECUTIVE = "executive"
 
+
 class WorkMode(str, Enum):
     REMOTE = "remote"
     HYBRID = "hybrid"
     ONSITE = "onsite"
+
 
 class RoleStatus(str, Enum):
     SOURCED = "sourced"
@@ -31,6 +35,7 @@ class RoleStatus(str, Enum):
     APPLYING = "applying"
     APPLIED = "applied"
     IGNORED = "ignored"
+
 
 class ApplicationStatus(str, Enum):
     DRAFT = "draft"
@@ -44,24 +49,36 @@ class ApplicationStatus(str, Enum):
     OFFER = "offer"
     CLOSED = "closed"
 
+
 # --- Pydantic Models (for LLM output) ---
 class RankResult(BaseModel):
-    score: float = Field(..., description="A score from 0.0 to 1.0 on how well the profile fits the role.")
+    score: float = Field(
+        ...,
+        description="A score from 0.0 to 1.0 on how well the profile fits the role.",
+    )
     rationale: str = Field(..., description="A brief explanation for the score.")
+
 
 class ResumeDraft(BaseModel):
     resume_md: str
     cover_letter_md: str
     identified_skills: List[str]
 
+
 # --- SQLModel Tables ---
 class Skill(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True)
 
+
 class RoleSkillLink(SQLModel, table=True):
-    role_id: Optional[int] = Field(default=None, foreign_key="role.id", primary_key=True)
-    skill_id: Optional[int] = Field(default=None, foreign_key="skill.id", primary_key=True)
+    role_id: Optional[int] = Field(
+        default=None, foreign_key="role.id", primary_key=True
+    )
+    skill_id: Optional[int] = Field(
+        default=None, foreign_key="skill.id", primary_key=True
+    )
+
 
 class Credential(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -70,11 +87,13 @@ class Credential(SQLModel, table=True):
     username: str
     encrypted_password: str = Field(sa_column=Column(Text))
 
+
 class Company(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     website: Optional[str] = None
     roles: List["Role"] = Relationship(back_populates="company")
+
 
 class Role(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -87,10 +106,11 @@ class Role(SQLModel, table=True):
     rank_rationale: Optional[str] = Field(default=None, sa_column=Column(Text))
     company_id: int = Field(foreign_key="company.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     company: Company = Relationship(back_populates="roles")
     skills: List[Skill] = Relationship(link_model=RoleSkillLink)
     applications: List["Application"] = Relationship(back_populates="role")
+
 
 class Application(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -101,14 +121,14 @@ class Application(SQLModel, table=True):
     resume_s3_url: Optional[str] = None
     cover_letter_s3_url: Optional[str] = None
     custom_answers: Optional[Dict[str, Any]] = Field(
-        default_factory=dict, 
-        sa_column=Column(sa.JSON)
+        default_factory=dict, sa_column=Column(sa.JSON)
     )
     submitted_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     role: Role = Relationship(back_populates="applications")
     profile: "Profile" = Relationship(back_populates="applications")
+
 
 class UserPreference(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -116,8 +136,9 @@ class UserPreference(SQLModel, table=True):
     key: str = Field(index=True)
     value: str
     last_updated: datetime = Field(default_factory=datetime.utcnow)
-    
+
     profile: "Profile" = Relationship(back_populates="preferences")
+
 
 class Profile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -125,7 +146,7 @@ class Profile(SQLModel, table=True):
     summary: str = Field(sa_column=Column(Text))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     credentials: List[Credential] = Relationship()
     preferences: List[UserPreference] = Relationship(back_populates="profile")
-    applications: List[Application] = Relationship(back_populates="profile") 
+    applications: List[Application] = Relationship(back_populates="profile")

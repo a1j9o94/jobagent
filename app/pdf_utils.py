@@ -6,10 +6,11 @@ from markdown import markdown
 
 logger = logging.getLogger(__name__)
 
+
 def markdown_to_html(md_content: str) -> str:
     """Convert markdown to HTML with basic styling."""
     html_content = markdown(md_content)
-    
+
     # Basic CSS for professional documents
     css_style = """
     <style>
@@ -35,7 +36,7 @@ def markdown_to_html(md_content: str) -> str:
     }
     </style>
     """
-    
+
     return f"""
     <!DOCTYPE html>
     <html>
@@ -49,6 +50,7 @@ def markdown_to_html(md_content: str) -> str:
     </html>
     """
 
+
 def render_to_pdf(content: str, is_markdown: bool = True) -> bytes:
     """Convert markdown or HTML content to PDF bytes."""
     try:
@@ -56,11 +58,11 @@ def render_to_pdf(content: str, is_markdown: bool = True) -> bytes:
             html_content = markdown_to_html(content)
         else:
             html_content = content
-        
+
         pdf_bytes = HTML(string=html_content).write_pdf()
         logger.info("Successfully generated PDF")
         return pdf_bytes
-    
+
     except Exception as e:
         logger.error(f"Failed to generate PDF: {e}")
-        raise 
+        raise

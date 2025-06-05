@@ -1,1 +1,211 @@
-# tests/conftest.py\nimport pytest\nimport os\nimport asyncio\nfrom typing import Generator, AsyncGenerator # Added AsyncGenerator\n\nfrom sqlalchemy.ext.asyncio import create_async_engine, AsyncSession # For async db if needed\nfrom sqlmodel import Session, create_engine, SQLModel\nfrom fastapi.testclient import TestClient\nfrom testcontainers.postgres import PostgresContainer\nfrom testcontainers.redis import RedisContainer\n\nfrom app.api_server import app\nfrom app.db import get_session\nfrom app.models import Profile, Company, Role, Application, UserPreference # Added Application, UserPreference\n\n# Test environment setup\nos.environ.update({\n    \"PROFILE_INGEST_API_KEY\": \"test-api-key\",\n    \"ENCRYPTION_KEY\": \"test_encryption_key_32_characters_long\", # Ensure key is 32 bytes url-safe base64\n    \"OPENAI_API_KEY\": \"test-openai-key\",\n    \"S3_ENDPOINT_URL\": \"http://localhost:9000\", # Mock S3 for tests if not using real MinIO\n    \"AWS_ACCESS_KEY_ID\": \"testminioadmin\",\n    \"AWS_SECRET_ACCESS_KEY\": \"testminioadmin\",\n    \"S3_BUCKET_NAME\": \"test-job-agent-documents\",\n    \"TWILIO_ACCOUNT_SID\": \"ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n    \"TWILIO_AUTH_TOKEN\": \"test_twilio_auth_token_here\",\n    \"WA_FROM\": \"whatsapp:+14155238886\",\n    \"WA_TO\": \"whatsapp:+12345678900\",\n    \"DATABASE_URL\": \"postgresql+psycopg2://test_user:test_password@localhost:5433/test_jobagent\", # Default for local test runs\n    \"REDIS_URL\": \"redis://localhost:6380/0\" # Default for local test runs\n})\n\n@pytest.fixture(scope=\"session\")\ndef event_loop():\n    \"\"\"Create an instance of the default event loop for the test session.\"\"\"\n    # policy = asyncio.get_event_loop_policy()\n    # loop = policy.new_event_loop()\n    # yield loop\n    # loop.close()\n    # The above is preferred but can cause issues with pytest-asyncio.\n    # If using pytest-asyncio, it usually manages the loop.\n    # For simplicity and compatibility, let pytest-asyncio handle it if it's used.\n    # If tests are not using asyncio directly in fixtures extensively, this can be simplified.\n    # If you encounter issues, ensure pytest-asyncio is configured correctly.\n    # For now, this basic fixture should work with pytest-asyncio default behavior.\n    loop = asyncio.get_event_loop_policy().new_event_loop()\n    yield loop\n    loop.close()\n\n@pytest.fixture(scope=\"session\")\ndef postgres_container_fixture(): # Renamed to avoid conflict if not always used\n    \"\"\"Start a PostgreSQL container for testing. Provides the container object.\"\"\"\n    # Set a fixed port for consistency if needed, otherwise dynamic is fine.\n    # Example: container = PostgresContainer(\"postgres:16-alpine\").with_bind_ports(5432, 54321)\n    with PostgresContainer(\"postgres:16-alpine\") as postgres:\n        # Update DATABASE_URL for other fixtures/tests to use this container\n        os.environ[\"DATABASE_URL\"] = postgres.get_connection_url().replace(\"psycopg2\", \"psycopg2\") # ensure drivername if needed\n        yield postgres\n\n@pytest.fixture(scope=\"session\")\ndef redis_container_fixture(): # Renamed\n    \"\"\"Start a Redis container for testing. Provides the container object.\"\"\"\n    with RedisContainer(\"redis:7-alpine\") as redis:\n        os.environ[\"REDIS_URL\"] = f\"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}/0\"\n        yield redis\n\n@pytest.fixture(scope=\"session\")\ndef test_engine(postgres_container_fixture): # Depends on the container fixture\n    \"\"\"Create a test database engine using the test container.\"\"\"\n    database_url = postgres_container_fixture.get_connection_url()\n    # The URL from testcontainers might use 'postgresql://...' which SQLModel/psycopg2 might prefer as 'postgresql+psycopg2://...'\n    # Adjust if necessary, though usually it works out.\n    # Forcing psycopg2 for clarity as per design doc's DATABASE_URL format.\n    if \"postgresql+psycopg2\" not in database_url:\n        database_url = database_url.replace(\"postgresql://\", \"postgresql+psycopg2://\")\n\n    engine = create_engine(database_url) # Add echo=True for debugging if needed\n    \n    # Create all tables\n    SQLModel.metadata.create_all(engine)\n    \n    yield engine\n    \n    # Cleanup\n    SQLModel.metadata.drop_all(engine)\n    engine.dispose()\n\n@pytest.fixture(scope=\"function\") # Changed to function scope for test isolation\def session(test_engine) -> Generator[Session, None, None]:\n    \"\"\"Create a test database session. Rolls back changes after each test.\"\"\"\n    connection = test_engine.connect()\n    transaction = connection.begin()\n    db_session = Session(bind=connection)\n\n    yield db_session\n\n    db_session.close()\n    transaction.rollback()\n    connection.close()\n\n\n@pytest.fixture(scope=\"function\") # Changed to function scope\ndef client(session: Session) -> Generator[TestClient, None, None]:\n    \"\"\"Create a test client with database dependency override.\"\"\"\n    def get_session_override():\n        return session\n\n    app.dependency_overrides[get_session] = get_session_override\n    \n    with TestClient(app) as test_client:\n        yield test_client\n    \n    app.dependency_overrides.clear()\n\n@pytest.fixture\ndef sample_profile_data() -> dict:\n    return {\n        \"headline\": \"Senior Software Engineer | Python & Cloud\",\n        \"summary\": \"Experienced engineer specializing in building scalable backend systems.\"\n    }\n\n@pytest.fixture\ndef sample_profile(session: Session, sample_profile_data: dict) -> Profile:\n    \"\"\"Create a sample profile for testing.\"\"\"\n    profile = Profile(**sample_profile_data)\n    session.add(profile)\n    session.commit()\n    session.refresh(profile)\n    return profile\n\n@pytest.fixture\ndef sample_company_data() -> dict:\n    return {\n        \"name\": \"TechCorp Inc.\",\n        \"website\": \"https://techcorp.com\"\n    }\n\n@pytest.fixture\ndef sample_company(session: Session, sample_company_data: dict) -> Company:\n    \"\"\"Create a sample company for testing.\"\"\"\n    company = Company(**sample_company_data)\n    session.add(company)\n    session.commit()\n    session.refresh(company)\n    return company\n\n@pytest.fixture\ndef sample_role_data(sample_company: Company) -> dict:\n    return {\n        \"title\": \"Senior Python Developer\",\n        \"description\": \"We are looking for an experienced Python developer...\",\n        \"posting_url\": \"https://techcorp.com/jobs/senior-python-dev\",\n        \"unique_hash\": \"test_hash_123\", # Consider generating this dynamically or ensuring uniqueness\n        \"company_id\": sample_company.id\n    }\n\n@pytest.fixture\ndef sample_role(session: Session, sample_role_data: dict, sample_company: Company) -> Role:\n    \"\"\"Create a sample role for testing.\"\"\"\n    # Ensure company_id is correctly passed if not directly in sample_role_data\n    if \"company_id\" not in sample_role_data and sample_company:\n        sample_role_data[\"company_id\"] = sample_company.id\n    role = Role(**sample_role_data)\n    session.add(role)\n    session.commit()\n    session.refresh(role)\n    return role\n\n@pytest.fixture\ndef sample_application_data(sample_role: Role, sample_profile: Profile) -> dict:\n    return {\n        \"role_id\": sample_role.id,\n        \"profile_id\": sample_profile.id,\n        \"status\": \"draft\" # Using enum value directly\n    }\n\n@pytest.fixture\ndef sample_application(session: Session, sample_application_data: dict) -> Application:\n    app_data = sample_application_data.copy()\n    # Ensure status is correctly handled if it's an enum object vs string\n    # from app.models import ApplicationStatus\n    # if isinstance(app_data.get(\"status\"), str):\n    #    app_data[\"status\"] = ApplicationStatus(app_data[\"status\"])\n    \n    application = Application(**app_data)\n    session.add(application)\n    session.commit()\n    session.refresh(application)\n    return application\n\n@pytest.fixture\ndef sample_user_preference_data(sample_profile: Profile) -> dict:\n    return {\n        \"profile_id\": sample_profile.id,\n        \"key\": \"salary_expectation\",\n        \"value\": \"150000\"\n    }\n\n@pytest.fixture\ndef sample_user_preference(session: Session, sample_user_preference_data: dict) -> UserPreference:\n    preference = UserPreference(**sample_user_preference_data)\n    session.add(preference)\n    session.commit()\n    session.refresh(preference)\n    return preference\n\n# If you need an async session fixture for async db operations in tests:\n# @pytest.fixture(scope=\"session\")\n# async def async_test_engine(postgres_container_fixture):\n#     database_url = postgres_container_fixture.get_connection_url().replace(\"postgresql://\", \"postgresql+aiopg://\") # or asyncpg\n#     engine = create_async_engine(database_url)\n#     async with engine.begin() as conn:\n#         await conn.run_sync(SQLModel.metadata.create_all)\n#     yield engine\n#     async with engine.begin() as conn:\n#         await conn.run_sync(SQLModel.metadata.drop_all)\n#     await engine.dispose()\n\n# @pytest.fixture\n# async def async_session(async_test_engine) -> AsyncGenerator[AsyncSession, None]:\n#     async with AsyncSession(async_test_engine) as session:\n#         yield session\n 
+# tests/conftest.py
+# import pytest
+import os
+import asyncio
+from typing import Generator, AsyncGenerator
+import pytest
+from unittest.mock import patch
+from datetime import datetime
+
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlmodel import Session, create_engine, SQLModel
+from fastapi.testclient import TestClient
+
+from app.api_server import app
+from app.db import get_session
+from app.models import Profile, Company, Role, Application, UserPreference, ApplicationStatus, RoleStatus
+
+# Test environment setup - use the existing containers from docker-compose
+os.environ.update({
+    "PROFILE_INGEST_API_KEY": "test-api-key",
+    "ENCRYPTION_KEY": "test_encryption_key_32_characters_long",
+    "OPENAI_API_KEY": "test-openai-key",
+    "S3_ENDPOINT_URL": "http://localhost:9000",
+    "AWS_ACCESS_KEY_ID": "testminioadmin",
+    "AWS_SECRET_ACCESS_KEY": "testminioadmin",
+    "S3_BUCKET_NAME": "test-job-agent-documents",
+    "TWILIO_ACCOUNT_SID": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "TWILIO_AUTH_TOKEN": "test_twilio_auth_token_here",
+    "WA_FROM": "whatsapp:+14155238886",
+    "WA_TO": "whatsapp:+12345678900",
+    # Use the containers that are already running in docker-compose
+    "DATABASE_URL": "postgresql+psycopg2://test_user:test_password@test_db:5432/test_jobagent",
+    "REDIS_URL": "redis://test_redis:6379/0"
+})
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an instance of the default event loop for the test session."""
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+@pytest.fixture(scope="session")
+def test_engine():
+    """Create a test database engine using the docker-compose database."""
+    database_url = os.environ["DATABASE_URL"]
+    engine = create_engine(database_url, echo=False)
+    
+    # Create all tables
+    SQLModel.metadata.create_all(engine)
+    
+    yield engine
+    
+    # Note: We don't drop tables here since other tests might be running
+    # The database container will be recreated between test runs
+    engine.dispose()
+
+@pytest.fixture(scope="function")
+def session(test_engine) -> Generator[Session, None, None]:
+    """Create a test database session. Rolls back changes after each test."""
+    connection = test_engine.connect()
+    transaction = connection.begin()
+    db_session = Session(bind=connection)
+
+    yield db_session
+
+    db_session.close()
+    transaction.rollback()
+    connection.close()
+
+@pytest.fixture(scope="function")
+def client(session: Session) -> Generator[TestClient, None, None]:
+    """Create a test client with database dependency override."""
+    def get_session_override():
+        return session
+
+    app.dependency_overrides[get_session] = get_session_override
+    
+    with TestClient(app) as test_client:
+        yield test_client
+    
+    app.dependency_overrides.clear()
+
+# Mock fixtures for external services
+@pytest.fixture(autouse=True)
+def mock_external_services():
+    """Mock external services to prevent real API calls during tests."""
+    with patch('app.tools.ranking_agent') as mock_ranking_agent, \
+         patch('app.tools.resume_agent') as mock_resume_agent, \
+         patch('app.tools.upload_file_to_storage') as mock_upload, \
+         patch('app.notifications.send_whatsapp_message') as mock_whatsapp, \
+         patch('app.notifications.validate_twilio_webhook') as mock_validate_webhook:
+        
+        # Set up default mock returns
+        mock_validate_webhook.return_value = True
+        mock_whatsapp.return_value = True
+        mock_upload.return_value = "http://mock-storage/file.pdf"
+        
+        yield {
+            'ranking_agent': mock_ranking_agent,
+            'resume_agent': mock_resume_agent,
+            'upload_file_to_storage': mock_upload,
+            'send_whatsapp_message': mock_whatsapp,
+            'validate_twilio_webhook': mock_validate_webhook,
+        }
+
+@pytest.fixture
+def sample_profile_data() -> dict:
+    return {
+        "headline": "Senior Software Engineer | Python & Cloud",
+        "summary": "Experienced engineer specializing in building scalable backend systems.",
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow(),
+    }
+
+@pytest.fixture
+def sample_profile(session: Session, sample_profile_data: dict) -> Profile:
+    """Create a sample profile for testing."""
+    profile = Profile(**sample_profile_data)
+    session.add(profile)
+    session.commit()
+    session.refresh(profile)
+    return profile
+
+@pytest.fixture
+def sample_company_data() -> dict:
+    return {
+        "name": "TechCorp Inc.",
+        "website": "https://techcorp.com"
+    }
+
+@pytest.fixture
+def sample_company(session: Session, sample_company_data: dict) -> Company:
+    """Create a sample company for testing."""
+    company = Company(**sample_company_data)
+    session.add(company)
+    session.commit()
+    session.refresh(company)
+    return company
+
+@pytest.fixture
+def sample_role_data(sample_company: Company) -> dict:
+    return {
+        "title": "Senior Python Developer",
+        "description": "We are looking for an experienced Python developer...",
+        "posting_url": "https://techcorp.com/jobs/senior-python-dev",
+        "unique_hash": "test_hash_123",
+        "company_id": sample_company.id,
+        "created_at": datetime.utcnow(),
+    }
+
+@pytest.fixture
+def sample_role(session: Session, sample_role_data: dict, sample_company: Company) -> Role:
+    """Create a sample role for testing."""
+    if "company_id" not in sample_role_data and sample_company:
+        sample_role_data["company_id"] = sample_company.id
+    role = Role(**sample_role_data)
+    session.add(role)
+    session.commit()
+    session.refresh(role)
+    return role
+
+@pytest.fixture
+def sample_application_data(sample_role: Role, sample_profile: Profile) -> dict:
+    return {
+        "role_id": sample_role.id,
+        "profile_id": sample_profile.id,
+        "status": ApplicationStatus.DRAFT,
+    }
+
+@pytest.fixture
+def sample_application(session: Session, sample_application_data: dict) -> Application:
+    application = Application.model_validate(sample_application_data)
+    session.add(application)
+    session.commit()
+    session.refresh(application)
+    return application
+
+@pytest.fixture
+def sample_user_preference_data(sample_profile: Profile) -> dict:
+    return {
+        "profile_id": sample_profile.id,
+        "key": "salary_expectation",
+        "value": "150000",
+        "last_updated": datetime.utcnow(),
+    }
+
+@pytest.fixture
+def sample_user_preference(session: Session, sample_user_preference_data: dict) -> UserPreference:
+    preference = UserPreference(**sample_user_preference_data)
+    session.add(preference)
+    session.commit()
+    session.refresh(preference)
+    return preference
+
+# If you need an async session fixture for async db operations in tests:
+@pytest.fixture(scope="session")
+async def async_test_engine():
+    database_url = os.environ["DATABASE_URL"]
+    engine = create_async_engine(database_url)
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    yield engine
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
+    await engine.dispose()
+
+@pytest.fixture
+async def async_session(async_test_engine) -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSession(async_test_engine) as session:
+        yield session

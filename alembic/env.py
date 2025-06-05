@@ -2,7 +2,7 @@
 import os
 from logging.config import fileConfig
 from sqlmodel import SQLModel
-from sqlalchemy import engine_from_config, pool, create_engine # Added create_engine
+from sqlalchemy import engine_from_config, pool, create_engine  # Added create_engine
 from alembic import context
 from dotenv import load_dotenv
 
@@ -15,7 +15,7 @@ load_dotenv()
 # If alembic is run from the project root, this path might need adjustment
 # or the PYTHONPATH needs to be set up correctly.
 # Assuming alembic commands are run from the project root where `app` is a top-level package.
-from app.models import * 
+from app.models import *
 
 # This is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -34,11 +34,14 @@ if not db_url:
     # This is not explicitly in design doc but good practice for alembic.ini usage
     db_url = config.get_main_option("sqlalchemy.url")
 if not db_url:
-    raise ValueError("DATABASE_URL environment variable or sqlalchemy.url in alembic.ini must be set.")
+    raise ValueError(
+        "DATABASE_URL environment variable or sqlalchemy.url in alembic.ini must be set."
+    )
 
 config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = SQLModel.metadata
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -63,6 +66,7 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
@@ -80,15 +84,13 @@ def run_migrations_online() -> None:
     # )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, 
-            target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
 
+
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online() 
+    run_migrations_online()
