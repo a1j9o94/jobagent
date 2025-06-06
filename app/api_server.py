@@ -29,7 +29,6 @@ from app.db import (
 from app.storage import health_check as storage_health_check
 from app.notifications import (
     send_whatsapp_message,
-    validate_twilio_webhook,
     health_check as notification_health_check,
 )
 from app.models import (
@@ -43,6 +42,7 @@ from app.models import (
 )  # Added Role, Company, and RoleStatus
 from app.tools import save_user_preference, generate_unique_hash, ranking_agent  # Removed unused generate_unique_hash
 from app.tasks import celery_app, task_generate_documents
+from twilio.request_validator import RequestValidator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -72,6 +72,12 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # API Key authentication
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=True)
 PROFILE_INGEST_API_KEY = os.getenv("PROFILE_INGEST_API_KEY", "default-key")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+if TWILIO_AUTH_TOKEN:
+    twilio_validator = RequestValidator(TWILIO_AUTH_TOKEN)
+else:
+    twilio_validator = None
+    logger.warning("TWILIO_AUTH_TOKEN not set, webhook validation will be skipped.")
 
 # Base URL for API examples - automatically detects environment
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
@@ -264,59 +270,68 @@ async def ingest_profile_data(
 @limiter.limit("30/minute")
 async def handle_whatsapp_reply(
     request: Request, session: Session = Depends(get_session)
-):  # Added session dependency
+):
     """Handles inbound messages from Twilio for the HITL workflow."""
+    if not twilio_validator:
+        logger.error("Twilio validator not initialized. Cannot process webhook.")
+        # Return a 204 to prevent Twilio from retrying, but log the error.
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    # Store form data for validation
-    form_data = await request.form()
-    # setattr(request, '_form', form_data) # This is not standard and might cause issues.
-    # Instead, pass form_data to validate_twilio_webhook if needed.
+    url = str(request.url)
+    sig = request.headers.get("X-Twilio-Signature", "")
+    sig256 = request.headers.get("X-Twilio-Signature-256", "")
 
-    # Validate webhook signature
-    # The original validate_twilio_webhook expects request._form to be set.
-    # We will pass form_data directly if the validator is adapted, or adapt the validator.
-    # For now, assuming validate_twilio_webhook is adapted or request._form works by side effect in some envs.
-
-    # A more robust way to handle request._form for validation:
-    # Create a new Request object or adapt the validator if `request._form` is problematic.
-    # For this setup, let's assume the original `validate_twilio_webhook` works or will be adapted.
-    # A common pattern is to make `form_data` available in `request.state` or pass it directly.
-    # Let's try to set it, being mindful it's not standard FastAPI practice.
-    request_form_dict = dict(form_data)
-
-    # Create a mock request or adapt validate_twilio_webhook if direct attribute setting is an issue.
-    # For simplicity, let's assume validate_twilio_webhook can take form_data as an argument or
-    # that setting _form is handled by a middleware in a real scenario.
-    # Given the current `validate_twilio_webhook` structure, we rely on `request._form` being accessible.
-    # This line is potentially problematic and might need adjustment in `validate_twilio_webhook`.
-    request._form = request_form_dict
-
-    if not validate_twilio_webhook(request):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid webhook signature"
-        )
-
+    valid = False
     try:
+        # Decide how to grab the body based on content type
+        content_type = request.headers.get("content-type", "")
+        if content_type.startswith("application/json"):
+            body = await request.body()  # raw bytes
+            valid = twilio_validator.validate_body(url, body, sig) or \
+                    twilio_validator.validate_body(url, body, sig256)
+        else:
+            form = await request.form()
+            form_dict = dict(form)
+            valid = twilio_validator.validate(url, form_dict, sig) or \
+                    twilio_validator.validate(url, form_dict, sig256)
+
+        if not valid:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Invalid Twilio signature")
+
+        # Get form data for business logic, re-using if already read
+        if 'form_dict' in locals():
+            request_form_dict = form_dict
+        elif 'body' in locals():
+            import json
+            request_form_dict = json.loads(body)
+        else:
+            # This case should not be reached if validation logic is correct
+            # but as a fallback, we can try to read the form.
+            form = await request.form()
+            request_form_dict = dict(form)
+
+
         from_number = request_form_dict.get("From", "")
         message_body = request_form_dict.get("Body", "").strip()
+        message_sid = request_form_dict.get("MessageSid", "N/A")
 
-        logger.info(f"Received WhatsApp message from {from_number}: {message_body}")
+        logger.info(f"WhatsApp webhook OK. SID: {message_sid}, From: {from_number}")
 
         # Basic message processing
         if message_body.lower() in ["help", "h"]:
             help_message = """
-🤖 Job Agent Commands:
-• 'status' - Check application status
-• 'report' - Get daily report
-• 'stop' - Pause applications
-• 'start' - Resume applications
-• Or answer any pending questions
+                🤖 Job Agent Commands:
+                • 'status' - Check application status
+                • 'report' - Get daily report
+                • 'stop' - Pause applications
+                • 'start' - Resume applications
+                • Or answer any pending questions
             """
             send_whatsapp_message(help_message, from_number)
 
         elif message_body.lower() == "status":
             # Get status for the user (assuming single user for now)
-            # with get_session() as session: # Replaced with injected session
             pending_apps = session.exec(
                 select(Application).where(
                     Application.status == ApplicationStatus.NEEDS_USER_INFO
@@ -332,16 +347,13 @@ async def handle_whatsapp_reply(
                 task_send_daily_report,
             )  # Local import to avoid circular dependency issues at startup
 
-            # Assuming profile_id=1 for now, consistent with task_send_daily_report
-            # The task itself handles profile_id, so just call delay.
-            task_send_daily_report.delay()  # Pass profile_id if needed by task signature
+            task_send_daily_report.delay()
             send_whatsapp_message(
                 "📊Generating your daily report, it will arrive shortly!", from_number
             )
 
         else:
             # Assume this is an answer to a pending question
-            # This would need more sophisticated logic to match questions to applications
             response_msg = (
                 "✅ Got your response! I'll update the application accordingly."
             )
@@ -349,13 +361,17 @@ async def handle_whatsapp_reply(
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+    except HTTPException as http_exc:
+        logger.warning(f"Invalid Twilio signature for URL: {url}. Details: {http_exc.detail}")
+        raise http_exc # Re-raise the exception to let FastAPI handle it
+
     except Exception as e:
         logger.error(f"WhatsApp webhook processing failed: {e}")
+        # Avoid sending detailed internal errors back to Twilio
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook processing failed",
         )
-
 
 @app.post(
     "/jobs/rank/{role_id}",
@@ -526,6 +542,40 @@ async def test_openai_connectivity():
         raise HTTPException(
             status_code=500,
             detail=f"Failed to connect to OpenAI API: {e}",
+        )
+
+
+@app.get("/test/whatsapp", summary="Test sending a WhatsApp message", tags=["Testing"])
+@app.post("/test/whatsapp", summary="Test sending a WhatsApp message", tags=["Testing"])
+async def test_whatsapp_message(request: Request):
+    """
+    A temporary endpoint to test sending a WhatsApp message via Twilio.
+    This will send a message to the WA_TO number configured in your environment.
+    """
+    test_message = f"✅ This is a test message from the Job Agent API, sent at {datetime.now(UTC).isoformat()}."
+    
+    try:
+        # The send_whatsapp_message function in notifications.py may need adaptation
+        # if it doesn't already support sending to WA_TO from a non-webhook context.
+        # Assuming it can be called with just the message content.
+        to_number = os.getenv("WA_TO")
+        if not to_number:
+            raise ValueError("WA_TO environment variable is not set.")
+
+        success = send_whatsapp_message(test_message, to_number)
+
+        if success:
+            logger.info(f"Successfully sent test WhatsApp message to {to_number}")
+            return {"status": "success", "message": f"Test message sent to {to_number}."}
+        else:
+            raise HTTPException(
+                status_code=500, detail="Failed to send message. Check server logs."
+            )
+
+    except Exception as e:
+        logger.error(f"WhatsApp test endpoint failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to send WhatsApp message: {e}"
         )
 
 

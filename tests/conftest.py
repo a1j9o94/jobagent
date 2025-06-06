@@ -88,11 +88,9 @@ def mock_external_services():
     with patch('app.tools.ranking_agent') as mock_ranking_agent, \
          patch('app.tools.resume_agent') as mock_resume_agent, \
          patch('app.tools.upload_file_to_storage') as mock_upload, \
-         patch('app.notifications.send_whatsapp_message') as mock_whatsapp, \
-         patch('app.notifications.validate_twilio_webhook') as mock_validate_webhook:
+         patch('app.notifications.send_whatsapp_message') as mock_whatsapp:
         
         # Set up default mock returns
-        mock_validate_webhook.return_value = True
         mock_whatsapp.return_value = True
         mock_upload.return_value = "http://mock-storage/file.pdf"
         
@@ -101,7 +99,6 @@ def mock_external_services():
             'resume_agent': mock_resume_agent,
             'upload_file_to_storage': mock_upload,
             'send_whatsapp_message': mock_whatsapp,
-            'validate_twilio_webhook': mock_validate_webhook,
         }
 
 @pytest.fixture

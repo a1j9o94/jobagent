@@ -45,37 +45,6 @@ def send_whatsapp_message(message: str, to_number: str = None) -> bool:
         return False
 
 
-def validate_twilio_webhook(request: Request) -> bool:
-    """Validate that a webhook request came from Twilio."""
-    if not twilio_validator:
-        logger.warning("Twilio validator not initialized, skipping validation")
-        return True
-
-    try:
-        # Get the full URL including query parameters
-        url = str(request.url)
-
-        # Get the signature from headers
-        signature = request.headers.get("X-Twilio-Signature", "")
-
-        # Get the POST parameters
-        form_data = {}
-        if hasattr(request, "_form"):
-            form_data = dict(request._form)
-
-        # Validate the request
-        is_valid = twilio_validator.validate(url, form_data, signature)
-
-        if not is_valid:
-            logger.warning(f"Invalid Twilio webhook signature for URL: {url}")
-
-        return is_valid
-
-    except Exception as e:
-        logger.error(f"Error validating Twilio webhook: {e}")
-        return False
-
-
 def health_check() -> bool:
     """Check if notification service is accessible."""
     return twilio_client is not None

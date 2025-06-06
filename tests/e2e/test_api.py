@@ -262,82 +262,77 @@ class TestRoleRanking:
 
 class TestWhatsAppWebhook:
     # Common data for webhook tests
-    webhook_data_help = {"From": "whatsapp:+1234567890", "Body": "help"}
-    webhook_data_status_cmd = {"From": "whatsapp:+1234567890", "Body": "status"}
-    webhook_data_report_cmd = {"From": "whatsapp:+1234567890", "Body": "report"}
+    webhook_data_help = {"From": "whatsapp:+1234567890", "Body": "help", "MessageSid": "SM_test_help"}
+    webhook_data_status_cmd = {"From": "whatsapp:+1234567890", "Body": "status", "MessageSid": "SM_test_status"}
+    webhook_data_report_cmd = {"From": "whatsapp:+1234567890", "Body": "report", "MessageSid": "SM_test_report"}
     webhook_data_generic = {
         "From": "whatsapp:+1234567890",
         "Body": "Thanks for the update!",
+        "MessageSid": "SM_test_generic"
     }
 
-    @patch("app.api_server.validate_twilio_webhook", return_value=True)
+    @patch("app.api_server.twilio_validator")
     @patch("app.api_server.send_whatsapp_message", return_value=True)
     def test_whatsapp_webhook_help_command(
-        self, mock_send_msg, mock_validate, client: TestClient
+        self, mock_send_msg, mock_validator, client: TestClient
     ):
+        mock_validator.validate.return_value = True
         response = client.post("/webhooks/whatsapp", data=self.webhook_data_help)
         assert response.status_code == 204  # No Content
-        mock_validate.assert_called_once()
+        mock_validator.validate.assert_called_once()
         mock_send_msg.assert_called_once()
         assert "Job Agent Commands" in mock_send_msg.call_args[0][0]
 
-    @patch("app.api_server.validate_twilio_webhook", return_value=True)
+    @patch("app.api_server.twilio_validator")
     @patch("app.api_server.send_whatsapp_message", return_value=True)
     def test_whatsapp_webhook_status_command(
-        self, mock_send_msg, mock_validate, client: TestClient, session
+        self, mock_send_msg, mock_validator, client: TestClient, session
     ):
-        # Setup: create an application that needs user info
-        # Need a profile and role first from fixtures or created here.
-        # For simplicity, assume sample_application fixture can be used and its status modified.
-        # Or, more robustly, create the specific state needed.
-        # Since the endpoint queries for NEEDS_USER_INFO, let's ensure one exists.
-        # (Actual creation of such an app might involve more steps not tested here but in unit tests for tools)
-
+        mock_validator.validate.return_value = True
         response = client.post("/webhooks/whatsapp", data=self.webhook_data_status_cmd)
         assert response.status_code == 204
-        mock_validate.assert_called_once()
+        mock_validator.validate.assert_called_once()
         mock_send_msg.assert_called_once()
-        # The message content depends on DB state; here we check it was called.
-        # Example: assert "applications need your input" in mock_send_msg.call_args[0][0]
 
-    @patch("app.api_server.validate_twilio_webhook", return_value=True)
+    @patch("app.api_server.twilio_validator")
     @patch(
         "app.api_server.send_whatsapp_message", return_value=True
     )  # Mock sending confirmation
     @patch("app.tasks.task_send_daily_report.delay")  # Mock the Celery task call with correct path
     def test_whatsapp_webhook_report_command(
-        self, mock_task_delay, mock_send_msg, mock_validate, client: TestClient
+        self, mock_task_delay, mock_send_msg, mock_validator, client: TestClient
     ):
+        mock_validator.validate.return_value = True
         response = client.post("/webhooks/whatsapp", data=self.webhook_data_report_cmd)
         assert response.status_code == 204
-        mock_validate.assert_called_once()
+        mock_validator.validate.assert_called_once()
         mock_task_delay.assert_called_once()
         mock_send_msg.assert_called_once_with(
             "📊Generating your daily report, it will arrive shortly!",
             self.webhook_data_report_cmd["From"],
         )
 
-    @patch("app.api_server.validate_twilio_webhook", return_value=True)
+    @patch("app.api_server.twilio_validator")
     @patch("app.api_server.send_whatsapp_message", return_value=True)
     def test_whatsapp_webhook_generic_message(
-        self, mock_send_msg, mock_validate, client: TestClient
+        self, mock_send_msg, mock_validator, client: TestClient
     ):
+        mock_validator.validate.return_value = True
         response = client.post("/webhooks/whatsapp", data=self.webhook_data_generic)
         assert response.status_code == 204
-        mock_validate.assert_called_once()
+        mock_validator.validate.assert_called_once()
         mock_send_msg.assert_called_once()
         assert "Got your response!" in mock_send_msg.call_args[0][0]
 
-    @patch(
-        "app.api_server.validate_twilio_webhook", return_value=False
-    )  # Simulate invalid signature
+    @patch("app.api_server.twilio_validator")
     def test_whatsapp_webhook_invalid_signature(
-        self, mock_validate, client: TestClient
+        self, mock_validator, client: TestClient
     ):
+        mock_validator.validate.return_value = False
         response = client.post("/webhooks/whatsapp", data=self.webhook_data_generic)
         assert response.status_code == 403
-        mock_validate.assert_called_once()
-        assert "Invalid webhook signature" in response.json()["detail"]
+        mock_validator.validate.assert_called()
+        assert "Invalid Twilio signature" in response.json()["detail"]
 
 
 class TestRateLimiting:
