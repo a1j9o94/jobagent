@@ -10,7 +10,9 @@ logger = logging.getLogger(__name__)
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 WA_FROM = os.getenv("WA_FROM")
-WA_TO = os.getenv("WA_TO")
+# Sanitize WA_TO to remove any inline comments
+raw_wa_to = os.getenv("WA_TO", "")
+WA_TO = raw_wa_to.split("#")[0].strip()
 
 # Initialize Twilio client
 twilio_client = None
