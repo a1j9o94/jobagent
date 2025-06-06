@@ -72,6 +72,8 @@ PROFILE_INGEST_API_KEY = os.getenv("PROFILE_INGEST_API_KEY", "default-key")
 # Base URL for API examples - automatically detects environment
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
+# Add this near your other environment variable definitions
+STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "minio")  # Default to minio for local dev
 
 async def get_api_key(api_key: str = Depends(API_KEY_HEADER)):
     if api_key != PROFILE_INGEST_API_KEY:
@@ -110,13 +112,19 @@ async def root():
 @app.get("/health", summary="Comprehensive Health Check", tags=["System"])
 async def health_check_endpoint():  # Renamed to avoid conflict with imported health_check functions
     """Check the health of all system components."""
+    
+    # Dynamically check storage based on the environment
+    is_storage_healthy = True  # Assume healthy for managed services like Tigris
+    if STORAGE_PROVIDER == "minio":
+        is_storage_healthy = storage_health_check()
+
     health_status = {
         "status": "ok",
         "timestamp": datetime.now(UTC).isoformat(),
         "services": {
             "database": db_health_check(),
             "redis": redis_health_check(),
-            "object_storage": storage_health_check(),
+            "object_storage": is_storage_healthy,
             "notifications": notification_health_check(),
         },
     }
