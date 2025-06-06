@@ -58,10 +58,9 @@ def render_to_pdf(content: str, is_markdown: bool = True) -> bytes:
             html_content = markdown_to_html(content)
         else:
             html_content = content
-
-        pdf_bytes = HTML(string=html_content).write_pdf()
-        logger.info("Successfully generated PDF")
-        return pdf_bytes
+        
+        # This is the most direct way to use weasyprint and should be correct.
+        return HTML(string=html_content).write_pdf()
 
     except Exception as e:
         logger.error(f"Failed to generate PDF: {e}")

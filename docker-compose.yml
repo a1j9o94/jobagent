@@ -5,6 +5,8 @@ services:
     build: 
       context: .
       target: final # As defined in the Dockerfile
+    environment:
+      - USE_MOCK_LLM=true
     env_file:
       - .env # Ensure .env file is used
     ports: 
@@ -37,6 +39,8 @@ services:
     build: 
       context: .
       target: final
+    environment:
+      - USE_MOCK_LLM=true
     env_file:
       - .env
     depends_on:
@@ -55,6 +59,8 @@ services:
     build: 
       context: .
       target: final
+    environment:
+      - USE_MOCK_LLM=true
     env_file: 
       - .env
     depends_on:

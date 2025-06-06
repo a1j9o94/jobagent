@@ -14,6 +14,7 @@ from app.tools import (
     submit_application,
 )
 from app.notifications import send_whatsapp_message
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +73,11 @@ async def task_rank_role(self, role_id: int, profile_id: int):
 
 
 @celery_app.task(bind=True, max_retries=3)
-async def task_generate_documents(self, application_id: int):
-    """Async task to generate and upload application documents."""
+def task_generate_documents(self, application_id: int):
+    """Task to generate and upload application documents."""
     try:
-        result = await draft_and_upload_documents(application_id)
+        # Run the async function from a sync context
+        result = asyncio.run(draft_and_upload_documents(application_id))
         logger.info(f"Generated documents for application {application_id}")
         return result
     except Exception as e:

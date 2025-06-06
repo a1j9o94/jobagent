@@ -66,7 +66,7 @@ def upload_file_to_storage(
     try:
         file_stream = BytesIO(file_content)
         s3_client.upload_fileobj(
-            File=file_stream,
+            Fileobj=file_stream,
             Bucket=S3_BUCKET_NAME,
             Key=object_name,
             ExtraArgs={"ContentType": content_type},

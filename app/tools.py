@@ -100,23 +100,35 @@ async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
 
         role = application.role
         profile = application.profile
+        
+        # Check if we should use a mock for testing
+        use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 
         try:
-            # Generate documents using LLM
-            prompt = f"""
-            Create a resume and cover letter for this application:
-            
-            Job: {role.title} at {role.company.name}
-            Description: {role.description}
-            
-            Candidate: {profile.headline}
-            Summary: {profile.summary}
-            
-            Make the resume ATS-friendly and the cover letter compelling but concise.
-            """
-
-            result = await resume_agent.run(prompt)
-            draft = result.data
+            if use_mock:
+                # Use hardcoded mock data instead of calling the LLM
+                draft = ResumeDraft(
+                    resume_md="# Mock Resume\n\nThis is a test.",
+                    cover_letter_md="# Mock Cover Letter\n\nThis is a test.",
+                    identified_skills=["testing", "mocking"],
+                )
+                logger.info("Using mock LLM data for document generation.")
+            else:
+                # Generate documents using LLM
+                prompt = f"""
+                Create a resume and cover letter for this application:
+                
+                Job: {role.title} at {role.company.name}
+                Description: {role.description}
+                
+                Candidate: {profile.headline}
+                Summary: {profile.summary}
+                
+                Make the resume ATS-friendly and the cover letter compelling but concise.
+                """
+    
+                result = await resume_agent.run(prompt)
+                draft = result.data
 
             # Convert to PDF and upload
             resume_pdf = render_to_pdf(draft.resume_md)

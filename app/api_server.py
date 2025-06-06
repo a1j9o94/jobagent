@@ -18,6 +18,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from sqlmodel import Session, select
+import random
+import string
 
 from app.db import (
     get_session,
@@ -36,9 +38,11 @@ from app.models import (
     Application,
     ApplicationStatus,
     Role,
-)  # Added Role
-from app.tools import save_user_preference  # Removed unused generate_unique_hash
-from app.tasks import celery_app
+    Company,
+    RoleStatus,
+)  # Added Role, Company, and RoleStatus
+from app.tools import save_user_preference, generate_unique_hash  # Removed unused generate_unique_hash
+from app.tasks import celery_app, task_generate_documents
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -427,6 +431,76 @@ async def get_applications(
         apps_response.append(app_data)
 
     return {"applications": apps_response}
+
+
+@app.post("/test/upload", summary="Test file upload to storage", tags=["Testing"])
+async def test_storage_upload(session: Session = Depends(get_session)):
+    """
+    A temporary endpoint to test document generation and upload.
+    This creates a dummy profile, company, role, and application,
+    then triggers the document generation task.
+    """
+    try:
+        # 1. Create a dummy Company if it doesn't exist
+        company_name = "TestCorp"
+        company = session.exec(select(Company).where(Company.name == company_name)).first()
+        if not company:
+            company = Company.model_validate({"name": company_name, "website": "http://testcorp.com"})
+            session.add(company)
+            session.commit()
+            session.refresh(company)
+
+        # 2. Create a dummy Profile if it doesn't exist
+        profile = session.exec(select(Profile).limit(1)).first()
+        if not profile:
+            profile = Profile.model_validate(
+                {"headline": "Chief Testing Officer", "summary": "I test things."}
+            )
+            session.add(profile)
+            session.commit()
+            session.refresh(profile)
+
+        # 3. Create a dummy Role
+        random_suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        test_url = f"http://testcorp.com/jobs/{random_suffix}"
+        test_title = f"Principal Test Engineer {random_suffix}"
+        
+        role = Role.model_validate({
+            "title": test_title,
+            "description": "A test role for ensuring uploads work.",
+            "posting_url": test_url,
+            "unique_hash": generate_unique_hash(test_title, test_url),
+            "status": RoleStatus.SOURCED,
+            "company_id": company.id,
+        })
+        session.add(role)
+        session.commit()
+        session.refresh(role)
+
+        # 4. Create a dummy Application
+        application = Application.model_validate({
+            "role_id": role.id,
+            "profile_id": profile.id,
+            "status": ApplicationStatus.DRAFT,
+        })
+        session.add(application)
+        session.commit()
+        session.refresh(application)
+
+        # 5. Trigger the document generation task
+        task = task_generate_documents.delay(application.id)
+
+        return {
+            "status": "success",
+            "message": "Document generation task has been queued.",
+            "application_id": application.id,
+            "task_id": task.id,
+        }
+    except Exception as e:
+        logger.error(f"Test upload endpoint failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to trigger test upload: {e}"
+        )
 
 
 if __name__ == "__main__":
