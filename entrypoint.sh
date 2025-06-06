@@ -110,20 +110,22 @@ SHOULD_WAIT_FOR_REDIS=false
 SHOULD_RUN_MIGRATIONS=false
 SHOULD_INIT_MINIO=false
 
-if [ "$MAIN_COMMAND" = "uvicorn" ]; then # API service
-    SHOULD_WAIT_FOR_DB=true
-    SHOULD_WAIT_FOR_REDIS=true # API might use Redis for caching or other things
-    SHOULD_RUN_MIGRATIONS=true
-    # Enable MinIO bucket creation for local development
-    if [[ "${S3_ENDPOINT_URL:-}" == *"minio"* ]] || [[ "${S3_ENDPOINT_URL:-}" == *"localhost"* ]] || [[ "${S3_ENDPOINT_URL:-}" == *"127.0.0.1"* ]]; then
-        SHOULD_INIT_MINIO=true  # Local MinIO setup
-    else
-        SHOULD_INIT_MINIO=false  # Use external S3 service (Tigris), no need to wait for local MinIO
+# In production, Fly.io handles service readiness and migrations via release commands.
+# The app should start immediately without waiting.
+if [ "$ENVIRONMENT" != "production" ]; then
+    if [ "$MAIN_COMMAND" = "uvicorn" ]; then # API service
+        SHOULD_WAIT_FOR_DB=true
+        SHOULD_WAIT_FOR_REDIS=true # API might use Redis for caching or other things
+        SHOULD_RUN_MIGRATIONS=true
+        if [[ "${S3_ENDPOINT_URL:-}" == *"minio"* ]] || [[ "${S3_ENDPOINT_URL:-}" == *"localhost"* ]] || [[ "${S3_ENDPOINT_URL:-}" == *"127.0.0.1"* ]]; then
+            SHOULD_INIT_MINIO=true
+        fi
+    elif [ "$MAIN_COMMAND" = "celery" ]; then # Worker or Beat service
+        SHOULD_WAIT_FOR_DB=true
+        SHOULD_WAIT_FOR_REDIS=true
     fi
-elif [ "$MAIN_COMMAND" = "celery" ]; then # Worker or Beat service
-    SHOULD_WAIT_FOR_DB=true  # Celery tasks likely interact with DB
-    SHOULD_WAIT_FOR_REDIS=true # Celery requires Redis broker
-    # MinIO init and migrations are typically handled by the API service or a dedicated migration job.
+else
+    echo "✅ Production environment detected. Skipping startup waits and migration checks."
 fi
 
 # Parse database connection details from DATABASE_URL

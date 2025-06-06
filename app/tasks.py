@@ -4,6 +4,7 @@ from celery import Celery
 from celery.schedules import crontab
 from sqlmodel import (
     Session as SQLModelSession,
+    select,
 )  # Renamed to avoid conflict with celery Session
 
 from app.db import engine, get_session_context  # Added get_session_context
@@ -152,7 +153,12 @@ def task_process_new_roles(profile_id: int = 1):  # Added profile_id as arg with
             for role_obj in new_roles:  # Renamed role to role_obj to avoid conflict
                 # Trigger ranking task
                 task_rank_role.delay(role_obj.id, profile_id)
+                # Update role status to prevent reprocessing
+                role_obj.status = RoleStatus.PROCESSING
+                session.add(role_obj)
                 processed_count += 1
+            
+            session.commit() # Commit status changes
 
             logger.info(
                 f"Queued {processed_count} roles for processing for profile {profile_id}"
