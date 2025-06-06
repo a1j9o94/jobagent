@@ -41,7 +41,7 @@ from app.models import (
     Company,
     RoleStatus,
 )  # Added Role, Company, and RoleStatus
-from app.tools import save_user_preference, generate_unique_hash  # Removed unused generate_unique_hash
+from app.tools import save_user_preference, generate_unique_hash, ranking_agent  # Removed unused generate_unique_hash
 from app.tasks import celery_app, task_generate_documents
 
 # Configure logging
@@ -433,6 +433,7 @@ async def get_applications(
     return {"applications": apps_response}
 
 
+@app.get("/test/upload", summary="Test file upload to storage", tags=["Testing"])
 @app.post("/test/upload", summary="Test file upload to storage", tags=["Testing"])
 async def test_storage_upload(session: Session = Depends(get_session)):
     """
@@ -500,6 +501,31 @@ async def test_storage_upload(session: Session = Depends(get_session)):
         logger.error(f"Test upload endpoint failed: {e}")
         raise HTTPException(
             status_code=500, detail=f"Failed to trigger test upload: {e}"
+        )
+
+
+@app.get("/test/openai", summary="Test OpenAI API connectivity", tags=["Testing"])
+@app.post("/test/openai", summary="Test OpenAI API connectivity", tags=["Testing"]) 
+async def test_openai_connectivity():
+    """
+    A temporary endpoint to test direct connectivity and authentication with the OpenAI API.
+    Supports both GET and POST methods.
+    """
+    try:
+        # Use the existing ranking_agent to perform a simple, direct query
+        prompt = "Give me a one-sentence summary of the three laws of robotics."
+        result = await ranking_agent.run(prompt)
+        logger.info(f"OpenAI test successful. Response: {result.data.rationale}")
+        return {
+            "status": "success",
+            "message": "OpenAI API call was successful.",
+            "response": result.data.rationale,
+        }
+    except Exception as e:
+        logger.error(f"OpenAI connectivity test failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect to OpenAI API: {e}",
         )
 
 

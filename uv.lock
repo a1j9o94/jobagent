@@ -1127,7 +1127,7 @@ requires-dist = [
     { name = "twilio", specifier = "==8.10.0" },
     { name = "ty", marker = "extra == 'dev'" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
-    { name = "weasyprint", specifier = "==60.2" },
+    { name = "weasyprint", specifier = "==62.1" },
 ]
 provides-extras = ["dev"]
 
@@ -2355,7 +2355,7 @@ wheels = [
 
 [[package]]
 name = "weasyprint"
-version = "60.2"
+version = "62.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi" },
@@ -2367,9 +2367,9 @@ dependencies = [
     { name = "pyphen" },
     { name = "tinycss2" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/b8/c6f092e67d00c2e5d6e6cccd30a6dfa4a047a283a3a0e3bfaa534c60ff8d/weasyprint-60.2.tar.gz", hash = "sha256:0c0cdd617a78699262b80026e67fa1692e3802cfa966395436eeaf6f787dd126", size = 442554, upload-time = "2023-12-11T12:12:11.997Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/0b/b2b165439954c1d4ed4045ad95cb7fb2bd0c696e3b90ecba56533b8aa12f/weasyprint-62.1.tar.gz", hash = "sha256:bf3c1a9ac4194271a7cf117229c093744105b50ac2fa64c0a6e44e68ae742992", size = 475687, upload-time = "2024-05-06T14:48:03.305Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/88/8a4bb7827bac6afdfcb5d72a0d71afb27df410d40539e1ebf5d31526e111/weasyprint-60.2-py3-none-any.whl", hash = "sha256:3e98eedcc1c5a14cb310c293c6d59a479f59a13f0d705ff07106482827fa5705", size = 268817, upload-time = "2023-12-11T12:12:08.682Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/31/a49abf6690be72365a9df7805dd4275d7044eaef807b430d038544a3900b/weasyprint-62.1-py3-none-any.whl", hash = "sha256:654d4c266336cbf9acc4da118c7778ef5839717e6055d5b8f995cf50be200c46", size = 289143, upload-time = "2024-05-06T14:47:59.484Z" },
 ]
 
 [[package]]
