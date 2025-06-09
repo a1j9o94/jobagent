@@ -14,7 +14,7 @@ from app.tools import (
     generate_daily_report,
     submit_application,
 )
-from app.notifications import send_whatsapp_message
+from app.notifications import send_sms_message
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -53,11 +53,11 @@ celery_app.conf.update(
 
 
 @celery_app.task(bind=True, max_retries=3)
-async def task_rank_role(self, role_id: int, profile_id: int):
-    """Async task to rank a role against a profile."""
+def task_rank_role(self, role_id: int, profile_id: int):
+    """Task to rank a role against a profile."""
     try:
-        # Assuming rank_role is an async function as defined in tools.py
-        result = await rank_role(role_id, profile_id)
+        # Run the async function from a sync context
+        result = asyncio.run(rank_role(role_id, profile_id))
         logger.info(f"Successfully ranked role {role_id}: {result.score}")
         return {
             "status": "success",
@@ -114,8 +114,8 @@ def task_send_daily_report(profile_id: int = 1):  # Added profile_id as arg with
         # generate_daily_report is synchronous, so no await needed
         report = generate_daily_report(profile_id)
 
-        # Send via WhatsApp
-        success = send_whatsapp_message(report)
+        # Send via SMS
+        success = send_sms_message(report)
 
         if success:
             logger.info(f"Daily report sent successfully for profile {profile_id}")
@@ -154,11 +154,11 @@ def task_process_new_roles(profile_id: int = 1):  # Added profile_id as arg with
                 # Trigger ranking task
                 task_rank_role.delay(role_obj.id, profile_id)
                 # Update role status to prevent reprocessing
-                role_obj.status = RoleStatus.PROCESSING
+                role_obj.status = RoleStatus.APPLYING
                 session.add(role_obj)
                 processed_count += 1
-            
-            session.commit() # Commit status changes
+
+            session.commit()  # Commit status changes
 
             logger.info(
                 f"Queued {processed_count} roles for processing for profile {profile_id}"

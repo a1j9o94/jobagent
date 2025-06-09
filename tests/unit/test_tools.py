@@ -49,10 +49,10 @@ class TestTools:
         """Test retrieving an existing user preference."""
         # Create a preference using the fixture data or directly
         pref = UserPreference(
-            profile_id=sample_profile.id, 
-            key="salary_expectation", 
+            profile_id=sample_profile.id,
+            key="salary_expectation",
             value="120000",
-            last_updated=datetime.now(UTC)
+            last_updated=datetime.now(UTC),
         )
         session.add(pref)
         session.commit()
@@ -62,7 +62,7 @@ class TestTools:
         with patch("app.tools.get_session_context") as mock_get_session:
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
-            
+
             value = get_user_preference(
                 profile_id=sample_profile.id, key="salary_expectation"
             )
@@ -73,7 +73,7 @@ class TestTools:
         with patch("app.tools.get_session_context") as mock_get_session:
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
-            
+
             value = get_user_preference(
                 profile_id=sample_profile.id, key="non_existent_key"
             )
@@ -84,7 +84,7 @@ class TestTools:
         with patch("app.tools.get_session_context") as mock_get_session:
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
-            
+
             save_user_preference(
                 profile_id=sample_profile.id, key="test_key", value="test_value"
             )
@@ -103,7 +103,7 @@ class TestTools:
         with patch("app.tools.get_session_context") as mock_get_session:
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
-            
+
             # Create initial preference
             save_user_preference(sample_profile.id, "test_key", "initial_value")
 
@@ -139,13 +139,14 @@ class TestAsyncTools:
             session.commit()
             session.refresh(sample_role)
 
-        with patch("app.tools.ranking_agent") as mock_agent, \
-             patch("app.tools.get_session_context") as mock_get_session:
-            
+        with (
+            patch("app.tools.ranking_agent") as mock_agent,
+            patch("app.tools.get_session_context") as mock_get_session,
+        ):
             # Mock the session context to return our test session
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
-            
+
             # Mock the LLM response
             mock_llm_run_result = Mock()  # This is the object returned by agent.run()
             # The actual data is in mock_llm_run_result.data
@@ -183,13 +184,14 @@ class TestAsyncTools:
             session.commit()
             session.refresh(sample_role)
 
-        with patch("app.tools.ranking_agent") as mock_agent, \
-             patch("app.tools.get_session_context") as mock_get_session:
-            
+        with (
+            patch("app.tools.ranking_agent") as mock_agent,
+            patch("app.tools.get_session_context") as mock_get_session,
+        ):
             # Mock the session context to return our test session
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
-            
+
             mock_agent.run = AsyncMock(side_effect=Exception("LLM service unavailable"))
 
             result = await rank_role(sample_role.id, sample_profile.id)
@@ -243,7 +245,7 @@ class TestAsyncTools:
             # Mock the session context to return our test session
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
-            
+
             # Mock LLM response for resume agent
             mock_llm_resume_result = Mock()
             mock_resume_draft_data = ResumeDraft(

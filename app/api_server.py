@@ -10,7 +10,6 @@ from fastapi import (
     Depends,
     HTTPException,
     status,
-    BackgroundTasks,
 )
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,29 +23,71 @@ import string
 from app.db import (
     get_session,
     health_check as db_health_check,
-    engine,
 )  # Added engine import
 from app.storage import health_check as storage_health_check
 from app.notifications import (
-    send_whatsapp_message,
+    send_sms_message,
+    send_whatsapp_message,  # Keep for backward compatibility in test endpoint
     health_check as notification_health_check,
 )
 from app.models import (
     Profile,
-    UserPreference,
     Application,
     ApplicationStatus,
     Role,
     Company,
     RoleStatus,
 )  # Added Role, Company, and RoleStatus
-from app.tools import save_user_preference, generate_unique_hash, ranking_agent  # Removed unused generate_unique_hash
+from app.tools import (
+    generate_unique_hash,
+    ranking_agent,
+)  # Removed unused generate_unique_hash
 from app.tasks import celery_app, task_generate_documents
 from twilio.request_validator import RequestValidator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def get_original_webhook_url(request: Request) -> str:
+    """
+    Reconstruct the original URL that Twilio used, accounting for reverse proxy forwarding.
+
+    Fly.io (and other reverse proxies) terminate HTTPS and forward HTTP requests internally.
+    This causes signature validation to fail because Twilio calculates signatures using
+    the original HTTPS URL, but FastAPI sees the internal HTTP URL.
+    """
+    # Check for forwarded protocol headers
+    proto = (
+        request.headers.get("X-Forwarded-Proto")
+        or request.headers.get("X-Forwarded-Protocol")
+        or request.headers.get("X-Scheme")
+        or "https"  # Default to HTTPS for production webhooks
+    )
+
+    # Get the host (should be the external hostname)
+    host = (
+        request.headers.get("X-Forwarded-Host")
+        or request.headers.get("Host")
+        or request.url.hostname
+    )
+
+    # Construct the original URL
+    path_with_query = str(request.url.path)
+    if request.url.query:
+        path_with_query += f"?{request.url.query}"
+
+    original_url = f"{proto}://{host}{path_with_query}"
+
+    # Debug logging for troubleshooting
+    logger.debug(
+        f"URL reconstruction: proto={proto}, host={host}, "
+        f"path={path_with_query}, original={original_url}, internal={request.url}"
+    )
+
+    return original_url
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -83,7 +124,10 @@ else:
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # Add this near your other environment variable definitions
-STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "minio")  # Default to minio for local dev
+STORAGE_PROVIDER = os.getenv(
+    "STORAGE_PROVIDER", "minio"
+)  # Default to minio for local dev
+
 
 async def get_api_key(api_key: str = Depends(API_KEY_HEADER)):
     if api_key != PROFILE_INGEST_API_KEY:
@@ -103,26 +147,37 @@ def redis_health_check() -> bool:
     except Exception as e:
         logger.error(f"Redis health check failed: {e}")
         return False
-    
+
+
 # Root route, that just shows if the app is running, the list of routes, and an example of how to use the ingest endpoint
 @app.get("/", summary="Root route", tags=["System"])
 async def root():
     return {
         "status": "ok",
         "message": "Job Agent API is running",
-        "routes": [{"path": "/ingest/profile", "method": "POST", "description": "Ingest a user's full profile"}],
+        "routes": [
+            {
+                "path": "/ingest/profile",
+                "method": "POST",
+                "description": "Ingest a user's full profile",
+            }
+        ],
         "example": {
             "method": "POST",
             "url": f"{API_BASE_URL}/ingest/profile",
             "headers": {"X-API-Key": "your-api-key"},
-            "body": {"headline": "Software Engineer", "summary": "I am a software engineer with 5 years of experience in Python and Django"}
-        }
+            "body": {
+                "headline": "Software Engineer",
+                "summary": "I am a software engineer with 5 years of experience in Python and Django",
+            },
+        },
     }
+
 
 @app.get("/health", summary="Comprehensive Health Check", tags=["System"])
 async def health_check_endpoint():  # Renamed to avoid conflict with imported health_check functions
     """Check the health of all system components."""
-    
+
     # Dynamically check storage based on the environment
     is_storage_healthy = True  # Assume healthy for managed services like Tigris
     if STORAGE_PROVIDER == "minio":
@@ -152,6 +207,7 @@ async def health_check_endpoint():  # Renamed to avoid conflict with imported he
     # Return appropriate HTTP status code
     if health_status["status"] == "critical":
         import json
+
         return Response(
             content=json.dumps(health_status),
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -160,6 +216,7 @@ async def health_check_endpoint():  # Renamed to avoid conflict with imported he
     elif health_status["status"] == "degraded":
         # Return JSON response properly for degraded status
         import json
+
         response = Response(
             content=json.dumps(health_status),
             status_code=status.HTTP_206_PARTIAL_CONTENT,
@@ -223,15 +280,15 @@ async def ingest_profile_data(
                 # Create UserPreference directly instead of using save_user_preference
                 # which creates its own session context
                 from app.models import UserPreference
-                
+
                 # Check if preference already exists
                 existing_pref = session.exec(
                     select(UserPreference).where(
                         UserPreference.profile_id == profile_id,
-                        UserPreference.key == key
+                        UserPreference.key == key,
                     )
                 ).first()
-                
+
                 if existing_pref:
                     existing_pref.value = str(value)
                     existing_pref.last_updated = datetime.now(UTC)
@@ -240,10 +297,10 @@ async def ingest_profile_data(
                         profile_id=profile_id,
                         key=key,
                         value=str(value),
-                        last_updated=datetime.now(UTC)
+                        last_updated=datetime.now(UTC),
                     )
                     session.add(new_pref)
-            
+
             # Commit all changes together
             session.commit()
 
@@ -265,19 +322,18 @@ async def ingest_profile_data(
 
 
 @app.post(
-    "/webhooks/whatsapp", summary="Handle incoming Twilio messages", tags=["Webhooks"]
+    "/webhooks/sms", summary="Handle incoming Twilio SMS messages", tags=["Webhooks"]
 )
 @limiter.limit("30/minute")
-async def handle_whatsapp_reply(
-    request: Request, session: Session = Depends(get_session)
-):
-    """Handles inbound messages from Twilio for the HITL workflow."""
+async def handle_sms_reply(request: Request, session: Session = Depends(get_session)):
+    """Handles inbound SMS messages from Twilio for the HITL workflow."""
     if not twilio_validator:
         logger.error("Twilio validator not initialized. Cannot process webhook.")
         # Return a 204 to prevent Twilio from retrying, but log the error.
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    url = str(request.url)
+    # Reconstruct the original HTTPS URL that Twilio used for signature calculation
+    url = get_original_webhook_url(request)
     sig = request.headers.get("X-Twilio-Signature", "")
     sig256 = request.headers.get("X-Twilio-Signature-256", "")
 
@@ -287,23 +343,34 @@ async def handle_whatsapp_reply(
         content_type = request.headers.get("content-type", "")
         if content_type.startswith("application/json"):
             body = await request.body()  # raw bytes
-            valid = twilio_validator.validate_body(url, body, sig) or \
-                    twilio_validator.validate_body(url, body, sig256)
+            valid = twilio_validator.validate(
+                url, body, sig
+            ) or twilio_validator.validate(url, body, sig256)
         else:
             form = await request.form()
             form_dict = dict(form)
-            valid = twilio_validator.validate(url, form_dict, sig) or \
-                    twilio_validator.validate(url, form_dict, sig256)
+            valid = twilio_validator.validate(
+                url, form_dict, sig
+            ) or twilio_validator.validate(url, form_dict, sig256)
 
         if not valid:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                                detail="Invalid Twilio signature")
+            logger.error(
+                f"Invalid Twilio signature. "
+                f"Original URL: {url}, "
+                f"Internal URL: {request.url}",
+                f"Signature: {sig}, Signature256: {sig256}",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid Twilio signature. This could mean the request was tampered with or is not from Twilio. Please ensure you are using valid Twilio credentials and the request is properly signed.",
+            )
 
         # Get form data for business logic, re-using if already read
-        if 'form_dict' in locals():
+        if "form_dict" in locals():
             request_form_dict = form_dict
-        elif 'body' in locals():
+        elif "body" in locals():
             import json
+
             request_form_dict = json.loads(body)
         else:
             # This case should not be reached if validation logic is correct
@@ -311,12 +378,16 @@ async def handle_whatsapp_reply(
             form = await request.form()
             request_form_dict = dict(form)
 
-
         from_number = request_form_dict.get("From", "")
         message_body = request_form_dict.get("Body", "").strip()
         message_sid = request_form_dict.get("MessageSid", "N/A")
 
-        logger.info(f"WhatsApp webhook OK. SID: {message_sid}, From: {from_number}")
+        # Sanitize phone number (remove any channel prefixes like 'whatsapp:')
+        clean_from_number = (
+            from_number.replace("whatsapp:", "").replace("sms:", "").strip()
+        )
+
+        logger.info(f"SMS webhook OK. SID: {message_sid}, From: {clean_from_number}")
 
         # Basic message processing
         if message_body.lower() in ["help", "h"]:
@@ -328,7 +399,7 @@ async def handle_whatsapp_reply(
                 • 'start' - Resume applications
                 • Or answer any pending questions
             """
-            send_whatsapp_message(help_message, from_number)
+            send_sms_message(help_message, clean_from_number)
 
         elif message_body.lower() == "status":
             # Get status for the user (assuming single user for now)
@@ -339,7 +410,7 @@ async def handle_whatsapp_reply(
             ).all()
 
             status_msg = f"📊 Status: {len(pending_apps)} applications need your input"
-            send_whatsapp_message(status_msg, from_number)
+            send_sms_message(status_msg, clean_from_number)
 
         elif message_body.lower() == "report":
             # Trigger daily report generation
@@ -348,8 +419,9 @@ async def handle_whatsapp_reply(
             )  # Local import to avoid circular dependency issues at startup
 
             task_send_daily_report.delay()
-            send_whatsapp_message(
-                "📊Generating your daily report, it will arrive shortly!", from_number
+            send_sms_message(
+                "📊Generating your daily report, it will arrive shortly!",
+                clean_from_number,
             )
 
         else:
@@ -357,21 +429,24 @@ async def handle_whatsapp_reply(
             response_msg = (
                 "✅ Got your response! I'll update the application accordingly."
             )
-            send_whatsapp_message(response_msg, from_number)
+            send_sms_message(response_msg, clean_from_number)
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     except HTTPException as http_exc:
-        logger.warning(f"Invalid Twilio signature for URL: {url}. Details: {http_exc.detail}")
-        raise http_exc # Re-raise the exception to let FastAPI handle it
+        logger.warning(
+            f"Invalid Twilio signature for original URL: {url} (internal: {request.url}). "
+            f"Details: {http_exc.detail}"
+        )
+        raise http_exc  # Re-raise the exception to let FastAPI handle it
 
     except Exception as e:
-        logger.error(f"WhatsApp webhook processing failed: {e}")
-        # Avoid sending detailed internal errors back to Twilio
+        logger.error(f"SMS webhook processing failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Webhook processing failed",
+            detail=f"Webhook processing failed: {str(e)}",
         )
+
 
 @app.post(
     "/jobs/rank/{role_id}",
@@ -460,9 +535,13 @@ async def test_storage_upload(session: Session = Depends(get_session)):
     try:
         # 1. Create a dummy Company if it doesn't exist
         company_name = "TestCorp"
-        company = session.exec(select(Company).where(Company.name == company_name)).first()
+        company = session.exec(
+            select(Company).where(Company.name == company_name)
+        ).first()
         if not company:
-            company = Company.model_validate({"name": company_name, "website": "http://testcorp.com"})
+            company = Company.model_validate(
+                {"name": company_name, "website": "http://testcorp.com"}
+            )
             session.add(company)
             session.commit()
             session.refresh(company)
@@ -478,28 +557,34 @@ async def test_storage_upload(session: Session = Depends(get_session)):
             session.refresh(profile)
 
         # 3. Create a dummy Role
-        random_suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        random_suffix = "".join(
+            random.choices(string.ascii_lowercase + string.digits, k=6)
+        )
         test_url = f"http://testcorp.com/jobs/{random_suffix}"
         test_title = f"Principal Test Engineer {random_suffix}"
-        
-        role = Role.model_validate({
-            "title": test_title,
-            "description": "A test role for ensuring uploads work.",
-            "posting_url": test_url,
-            "unique_hash": generate_unique_hash(test_title, test_url),
-            "status": RoleStatus.SOURCED,
-            "company_id": company.id,
-        })
+
+        role = Role.model_validate(
+            {
+                "title": test_title,
+                "description": "A test role for ensuring uploads work.",
+                "posting_url": test_url,
+                "unique_hash": generate_unique_hash(test_title, test_url),
+                "status": RoleStatus.SOURCED,
+                "company_id": company.id,
+            }
+        )
         session.add(role)
         session.commit()
         session.refresh(role)
 
         # 4. Create a dummy Application
-        application = Application.model_validate({
-            "role_id": role.id,
-            "profile_id": profile.id,
-            "status": ApplicationStatus.DRAFT,
-        })
+        application = Application.model_validate(
+            {
+                "role_id": role.id,
+                "profile_id": profile.id,
+                "status": ApplicationStatus.DRAFT,
+            }
+        )
         session.add(application)
         session.commit()
         session.refresh(application)
@@ -521,7 +606,7 @@ async def test_storage_upload(session: Session = Depends(get_session)):
 
 
 @app.get("/test/openai", summary="Test OpenAI API connectivity", tags=["Testing"])
-@app.post("/test/openai", summary="Test OpenAI API connectivity", tags=["Testing"]) 
+@app.post("/test/openai", summary="Test OpenAI API connectivity", tags=["Testing"])
 async def test_openai_connectivity():
     """
     A temporary endpoint to test direct connectivity and authentication with the OpenAI API.
@@ -545,19 +630,56 @@ async def test_openai_connectivity():
         )
 
 
-@app.get("/test/whatsapp", summary="Test sending a WhatsApp message", tags=["Testing"])
-@app.post("/test/whatsapp", summary="Test sending a WhatsApp message", tags=["Testing"])
-async def test_whatsapp_message(request: Request):
+@app.get("/test/sms", summary="Test sending an SMS message", tags=["Testing"])
+@app.post("/test/sms", summary="Test sending an SMS message", tags=["Testing"])
+async def test_sms_message(request: Request):
     """
-    A temporary endpoint to test sending a WhatsApp message via Twilio.
-    This will send a message to the WA_TO number configured in your environment.
+    A temporary endpoint to test sending an SMS message via Twilio.
+    This will send a message to the SMS_TO number configured in your environment.
     """
     test_message = f"✅ This is a test message from the Job Agent API, sent at {datetime.now(UTC).isoformat()}."
-    
+
     try:
-        # The send_whatsapp_message function in notifications.py may need adaptation
-        # if it doesn't already support sending to WA_TO from a non-webhook context.
-        # Assuming it can be called with just the message content.
+        to_number = os.getenv("SMS_TO")
+        if not to_number:
+            raise ValueError("SMS_TO environment variable is not set.")
+
+        success = send_sms_message(test_message, to_number)
+
+        if success:
+            logger.info(f"Successfully sent test SMS message to {to_number}")
+            return {
+                "status": "success",
+                "message": f"Test message sent to {to_number}.",
+            }
+        else:
+            raise HTTPException(
+                status_code=500, detail="Failed to send message. Check server logs."
+            )
+
+    except Exception as e:
+        logger.error(f"SMS test endpoint failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to send SMS message: {e}")
+
+
+@app.get(
+    "/test/whatsapp",
+    summary="Test sending a WhatsApp message (DEPRECATED)",
+    tags=["Testing"],
+)
+@app.post(
+    "/test/whatsapp",
+    summary="Test sending a WhatsApp message (DEPRECATED)",
+    tags=["Testing"],
+)
+async def test_whatsapp_message(request: Request):
+    """
+    [DEPRECATED] A temporary endpoint to test sending a WhatsApp message via Twilio.
+    Use /test/sms instead. This endpoint is kept for backward compatibility.
+    """
+    test_message = f"✅ This is a test message from the Job Agent API, sent at {datetime.now(UTC).isoformat()}."
+
+    try:
         to_number = os.getenv("WA_TO")
         if not to_number:
             raise ValueError("WA_TO environment variable is not set.")
@@ -566,7 +688,10 @@ async def test_whatsapp_message(request: Request):
 
         if success:
             logger.info(f"Successfully sent test WhatsApp message to {to_number}")
-            return {"status": "success", "message": f"Test message sent to {to_number}."}
+            return {
+                "status": "success",
+                "message": f"Test message sent to {to_number}.",
+            }
         else:
             raise HTTPException(
                 status_code=500, detail="Failed to send message. Check server logs."

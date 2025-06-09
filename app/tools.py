@@ -100,7 +100,7 @@ async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
 
         role = application.role
         profile = application.profile
-        
+
         # Check if we should use a mock for testing
         use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 
@@ -126,7 +126,7 @@ async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
                 
                 Make the resume ATS-friendly and the cover letter compelling but concise.
                 """
-    
+
                 result = await resume_agent.run(prompt)
                 draft = result.data
 
@@ -314,10 +314,10 @@ def save_user_preference(profile_id: int, key: str, value: str) -> None:
             pref.last_updated = datetime.now(UTC)
         else:
             pref = UserPreference(
-                profile_id=profile_id, 
-                key=key, 
+                profile_id=profile_id,
+                key=key,
                 value=value,
-                last_updated=datetime.now(UTC)
+                last_updated=datetime.now(UTC),
             )
             session.add(pref)
 

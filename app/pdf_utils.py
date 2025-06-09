@@ -58,7 +58,7 @@ def render_to_pdf(content: str, is_markdown: bool = True) -> bytes:
             html_content = markdown_to_html(content)
         else:
             html_content = content
-        
+
         # This is the most direct way to use weasyprint and should be correct.
         return HTML(string=html_content).write_pdf()
 

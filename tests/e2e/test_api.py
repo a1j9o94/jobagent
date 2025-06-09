@@ -31,13 +31,23 @@ class TestRootEndpoint:
         data = response.json()
         assert data["status"] == "ok"
         assert data["message"] == "Job Agent API is running"
-        assert data["routes"] == [{"path": "/ingest/profile", "method": "POST", "description": "Ingest a user's full profile"}]
+        assert data["routes"] == [
+            {
+                "path": "/ingest/profile",
+                "method": "POST",
+                "description": "Ingest a user's full profile",
+            }
+        ]
         assert data["example"] == {
             "method": "POST",
             "url": f"{API_BASE_URL}/ingest/profile",
             "headers": {"X-API-Key": "your-api-key"},
-            "body": {"headline": "Software Engineer", "summary": "I am a software engineer with 5 years of experience in Python and Django"}
+            "body": {
+                "headline": "Software Engineer",
+                "summary": "I am a software engineer with 5 years of experience in Python and Django",
+            },
         }
+
 
 class TestHealthEndpoint:
     def test_health_check_success(self, client: TestClient):
@@ -122,8 +132,7 @@ class TestProfileIngestion:
         assert db_profile.headline == profile_data["headline"]
         pref = session.exec(
             select(UserPreference).where(
-                UserPreference.profile_id == profile_id,
-                UserPreference.key == "email"
+                UserPreference.profile_id == profile_id, UserPreference.key == "email"
             )
         ).first()
         assert pref is not None
@@ -155,7 +164,7 @@ class TestProfileIngestion:
         updated_pref = session.exec(
             select(UserPreference).where(
                 UserPreference.profile_id == sample_profile.id,
-                UserPreference.key == "email"
+                UserPreference.key == "email",
             )
         ).first()
         assert updated_pref is not None
@@ -250,7 +259,9 @@ class TestRoleRanking:
         assert response_data["role_id"] == sample_role.id
 
         # Verify task was called
-        mock_task_delay.assert_called_once_with(sample_role.id, 1)  # role_id, profile_id
+        mock_task_delay.assert_called_once_with(
+            sample_role.id, 1
+        )  # role_id, profile_id
 
     def test_trigger_role_ranking_not_found(self, client: TestClient):
         """Test triggering role ranking for non-existent role."""
@@ -260,50 +271,64 @@ class TestRoleRanking:
         assert response.status_code == 404
 
 
-class TestWhatsAppWebhook:
-    # Common data for webhook tests
-    webhook_data_help = {"From": "whatsapp:+1234567890", "Body": "help", "MessageSid": "SM_test_help"}
-    webhook_data_status_cmd = {"From": "whatsapp:+1234567890", "Body": "status", "MessageSid": "SM_test_status"}
-    webhook_data_report_cmd = {"From": "whatsapp:+1234567890", "Body": "report", "MessageSid": "SM_test_report"}
+class TestSMSWebhook:
+    # Common data for SMS webhook tests
+    webhook_data_help = {
+        "From": "+1234567890",
+        "Body": "help",
+        "MessageSid": "SM_test_help",
+    }
+    webhook_data_status_cmd = {
+        "From": "+1234567890",
+        "Body": "status",
+        "MessageSid": "SM_test_status",
+    }
+    webhook_data_report_cmd = {
+        "From": "+1234567890",
+        "Body": "report",
+        "MessageSid": "SM_test_report",
+    }
     webhook_data_generic = {
-        "From": "whatsapp:+1234567890",
+        "From": "+1234567890",
         "Body": "Thanks for the update!",
-        "MessageSid": "SM_test_generic"
+        "MessageSid": "SM_test_generic",
     }
 
     @patch("app.api_server.twilio_validator")
-    @patch("app.api_server.send_whatsapp_message", return_value=True)
-    def test_whatsapp_webhook_help_command(
+    @patch("app.api_server.send_sms_message", return_value=True)
+    def test_sms_webhook_help_command(
         self, mock_send_msg, mock_validator, client: TestClient
     ):
         mock_validator.validate.return_value = True
-        response = client.post("/webhooks/whatsapp", data=self.webhook_data_help)
+        response = client.post("/webhooks/sms", data=self.webhook_data_help)
         assert response.status_code == 204  # No Content
         mock_validator.validate.assert_called_once()
         mock_send_msg.assert_called_once()
         assert "Job Agent Commands" in mock_send_msg.call_args[0][0]
 
     @patch("app.api_server.twilio_validator")
-    @patch("app.api_server.send_whatsapp_message", return_value=True)
-    def test_whatsapp_webhook_status_command(
+    @patch("app.api_server.send_sms_message", return_value=True)
+    def test_sms_webhook_status_command(
         self, mock_send_msg, mock_validator, client: TestClient, session
     ):
         mock_validator.validate.return_value = True
-        response = client.post("/webhooks/whatsapp", data=self.webhook_data_status_cmd)
+        response = client.post("/webhooks/sms", data=self.webhook_data_status_cmd)
         assert response.status_code == 204
         mock_validator.validate.assert_called_once()
         mock_send_msg.assert_called_once()
 
     @patch("app.api_server.twilio_validator")
     @patch(
-        "app.api_server.send_whatsapp_message", return_value=True
+        "app.api_server.send_sms_message", return_value=True
     )  # Mock sending confirmation
-    @patch("app.tasks.task_send_daily_report.delay")  # Mock the Celery task call with correct path
-    def test_whatsapp_webhook_report_command(
+    @patch(
+        "app.tasks.task_send_daily_report.delay"
+    )  # Mock the Celery task call with correct path
+    def test_sms_webhook_report_command(
         self, mock_task_delay, mock_send_msg, mock_validator, client: TestClient
     ):
         mock_validator.validate.return_value = True
-        response = client.post("/webhooks/whatsapp", data=self.webhook_data_report_cmd)
+        response = client.post("/webhooks/sms", data=self.webhook_data_report_cmd)
         assert response.status_code == 204
         mock_validator.validate.assert_called_once()
         mock_task_delay.assert_called_once()
@@ -313,16 +338,60 @@ class TestWhatsAppWebhook:
         )
 
     @patch("app.api_server.twilio_validator")
-    @patch("app.api_server.send_whatsapp_message", return_value=True)
-    def test_whatsapp_webhook_generic_message(
+    @patch("app.api_server.send_sms_message", return_value=True)
+    def test_sms_webhook_generic_message(
         self, mock_send_msg, mock_validator, client: TestClient
     ):
         mock_validator.validate.return_value = True
-        response = client.post("/webhooks/whatsapp", data=self.webhook_data_generic)
+        response = client.post("/webhooks/sms", data=self.webhook_data_generic)
         assert response.status_code == 204
         mock_validator.validate.assert_called_once()
         mock_send_msg.assert_called_once()
         assert "Got your response!" in mock_send_msg.call_args[0][0]
+
+    @patch("app.api_server.twilio_validator")
+    def test_sms_webhook_invalid_signature(self, mock_validator, client: TestClient):
+        mock_validator.validate.return_value = False
+        response = client.post("/webhooks/sms", data=self.webhook_data_generic)
+        assert response.status_code == 403
+        mock_validator.validate.assert_called()
+        assert "Invalid Twilio signature" in response.json()["detail"]
+
+
+class TestWhatsAppWebhook:
+    """[DEPRECATED] WhatsApp webhook tests - kept for backward compatibility.
+    Use TestSMSWebhook for new tests."""
+
+    # Common data for webhook tests
+    webhook_data_help = {
+        "From": "whatsapp:+1234567890",
+        "Body": "help",
+        "MessageSid": "SM_test_help",
+    }
+    webhook_data_status_cmd = {
+        "From": "whatsapp:+1234567890",
+        "Body": "status",
+        "MessageSid": "SM_test_status",
+    }
+    webhook_data_report_cmd = {
+        "From": "whatsapp:+1234567890",
+        "Body": "report",
+        "MessageSid": "SM_test_report",
+    }
+    webhook_data_generic = {
+        "From": "whatsapp:+1234567890",
+        "Body": "Thanks for the update!",
+        "MessageSid": "SM_test_generic",
+    }
+
+    @patch("app.api_server.twilio_validator")
+    @patch("app.api_server.send_whatsapp_message", return_value=True)
+    def test_whatsapp_webhook_help_command(
+        self, mock_send_msg, mock_validator, client: TestClient
+    ):
+        mock_validator.validate.return_value = True
+        response = client.post("/webhooks/whatsapp", data=self.webhook_data_help)
+        assert response.status_code == 404  # Route no longer exists
 
     @patch("app.api_server.twilio_validator")
     def test_whatsapp_webhook_invalid_signature(
@@ -330,9 +399,7 @@ class TestWhatsAppWebhook:
     ):
         mock_validator.validate.return_value = False
         response = client.post("/webhooks/whatsapp", data=self.webhook_data_generic)
-        assert response.status_code == 403
-        mock_validator.validate.assert_called()
-        assert "Invalid Twilio signature" in response.json()["detail"]
+        assert response.status_code == 404  # Route no longer exists
 
 
 class TestRateLimiting:
@@ -364,14 +431,12 @@ class TestRateLimiting:
                 break
 
         # Now make one more request that should definitely hit the rate limit
-        response = client.post(
-            "/ingest/profile", json=profile_data, headers=headers
-        )
-        
+        response = client.post("/ingest/profile", json=profile_data, headers=headers)
+
         # The test should either:
         # 1. Have 5 successful requests and then hit rate limit on 6th, OR
         # 2. Hit rate limit earlier due to test environment conditions
         # Both scenarios are valid for this test - we're just verifying rate limiting works
-        assert (
-            successful_requests >= 3 and response.status_code == 429
-        ), f"Expected at least 3 successful requests and final rate limit. Got {successful_requests} successful, final status: {response.status_code}"
+        assert successful_requests >= 3 and response.status_code == 429, (
+            f"Expected at least 3 successful requests and final rate limit. Got {successful_requests} successful, final status: {response.status_code}"
+        )

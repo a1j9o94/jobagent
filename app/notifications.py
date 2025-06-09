@@ -9,6 +9,14 @@ logger = logging.getLogger(__name__)
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+
+# SMS Configuration (primary)
+SMS_FROM = os.getenv("SMS_FROM")
+# Sanitize SMS_TO to remove any inline comments
+raw_sms_to = os.getenv("SMS_TO", "")
+SMS_TO = raw_sms_to.split("#")[0].strip()
+
+# WhatsApp Configuration (deprecated)
 WA_FROM = os.getenv("WA_FROM")
 # Sanitize WA_TO to remove any inline comments
 raw_wa_to = os.getenv("WA_TO", "")
@@ -25,8 +33,31 @@ else:
     logger.warning("Twilio credentials not configured")
 
 
+def send_sms_message(message: str, to_number: str = None) -> bool:
+    """Send an SMS message via Twilio."""
+    if not twilio_client:
+        logger.error("Twilio client not initialized")
+        return False
+
+    to_number = to_number or SMS_TO
+    if not to_number or not SMS_FROM:
+        logger.error("SMS phone numbers not configured")
+        return False
+
+    try:
+        message_obj = twilio_client.messages.create(
+            body=message, from_=SMS_FROM, to=to_number
+        )
+        logger.info(f"SMS message sent: {message_obj.sid}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send SMS message: {e}")
+        return False
+
+
 def send_whatsapp_message(message: str, to_number: str = None) -> bool:
-    """Send a WhatsApp message via Twilio."""
+    """Send a WhatsApp message via Twilio. [DEPRECATED - Use send_sms_message instead]"""
+    logger.warning("send_whatsapp_message is deprecated. Use send_sms_message instead.")
     if not twilio_client:
         logger.error("Twilio client not initialized")
         return False
