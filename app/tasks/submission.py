@@ -24,14 +24,44 @@ async def task_submit_application(self, application_id: int):
 
 
 @celery_app.task(bind=True, max_retries=3)
-async def task_apply_for_role(self, role_id: int, profile_id: int):
+def task_apply_for_role(self, role_id: int, profile_id: int):
     """
     Task to initiate an application for a role.
-    This task will create an Application and trigger submission.
+    This task will create an Application and set it up for submission.
     """
     logger.info(
         f"Initiating application for role_id: {role_id} and profile_id: {profile_id}"
     )
-    # This is a placeholder. Future implementation will create an Application
-    # and potentially chain the task_submit_application task.
-    return {"status": "received", "role_id": role_id, "profile_id": profile_id} 
+    
+    try:
+        from app.models import Application  # Local import to avoid circular dependency
+        from app.db import get_session_context
+        
+        with get_session_context() as session:
+            # Create a new Application using model_validate to handle default_factory fields
+            application_data = {
+                "role_id": role_id,
+                "profile_id": profile_id,
+                "celery_task_id": self.request.id,  # Track this task
+                # status defaults to ApplicationStatus.DRAFT
+            }
+            application = Application.model_validate(application_data)
+            
+            session.add(application)
+            session.commit()
+            session.refresh(application)
+            
+            logger.info(f"Created application {application.id} for role {role_id} and profile {profile_id}")
+            return {
+                "status": "success", 
+                "application_id": application.id,
+                "role_id": role_id, 
+                "profile_id": profile_id
+            }
+            
+    except Exception as e:
+        logger.error(f"Failed to create application for role {role_id} and profile {profile_id}: {e}")
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (self.request.retries + 1)  # 1 min, 2 min, 3 min
+            raise self.retry(countdown=countdown, exc=e)
+        return {"status": "error", "message": str(e), "role_id": role_id, "profile_id": profile_id} 

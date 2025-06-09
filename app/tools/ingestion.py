@@ -35,10 +35,10 @@ async def scrape_and_extract_role_details(url: str) -> RoleDetails:
     logger.info(f"Scraping URL: {url}")
     scraped_data = await app.scrape_url(url, only_main_content=True)
 
-    if not scraped_data or not scraped_data.get("markdown"):
+    if not scraped_data.markdown:
         raise Exception("Failed to scrape job posting or no markdown content found.")
 
-    markdown_content = scraped_data["markdown"]
+    markdown_content = scraped_data.markdown
     logger.info(f"Successfully scraped {len(markdown_content)} characters from {url}. Extracting details...")
     
     # Run the agent to extract structured data

@@ -3,7 +3,7 @@ import os
 import pytest
 import json  # For health check response parsing
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock, Mock  # Added Mock import
+from unittest.mock import patch, AsyncMock, Mock
 from sqlmodel import select  # Added for SQLModel queries
 
 from app.models import (
@@ -220,6 +220,61 @@ class TestApplicationsEndpoint:
         assert len(data["applications"]) >= 1
         assert data["applications"][0]["status"] == draft_status_str
         assert data["applications"][0]["id"] == sample_application.id
+
+    def test_get_applications_includes_task_created_applications(
+        self, client: TestClient, session, sample_profile: Profile
+    ):
+        """Test that applications created by tasks are visible in the API."""
+        from unittest.mock import Mock
+        from app.tasks.submission import task_apply_for_role
+        from app.models import Role, Company
+        
+        # Create a role manually for this test
+        company = Company(name="TestCorp")
+        session.add(company)
+        session.commit()
+        session.refresh(company)
+        
+        role_data = {
+            "title": "Test Developer",
+            "description": "Test role",
+            "posting_url": "https://example.com/test-job",
+            "unique_hash": "test_hash_applications",
+            "company_id": company.id,
+        }
+        role = Role.model_validate(role_data)
+        session.add(role)
+        session.commit()
+        session.refresh(role)
+        
+        # Use the test session context to ensure the task can see the same data
+        with patch("app.db.get_session_context") as mock_get_session:
+            mock_get_session.return_value.__enter__.return_value = session
+            mock_get_session.return_value.__exit__.return_value = None
+            
+            # Call the task using apply() for proper execution context
+            result = task_apply_for_role.apply(
+                args=[role.id, sample_profile.id], 
+                throw=True
+            ).result
+        
+        assert result["status"] == "success"
+        application_id = result["application_id"]
+        
+        # Now get applications via API
+        response = client.get("/applications", headers={"X-API-Key": "test-api-key"})
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Find our application in the results
+        app_ids = [app["id"] for app in data["applications"]]
+        assert application_id in app_ids
+        
+        # Find the specific application and verify its data
+        our_app = next(app for app in data["applications"] if app["id"] == application_id)
+        assert our_app["status"] == ApplicationStatus.DRAFT.value
+        assert our_app["role_title"] == "Test Developer"
+        assert our_app["company_name"] == "TestCorp"
 
     def test_get_applications_invalid_filter(self, client: TestClient):
         """Test getting applications with invalid status filter."""
@@ -500,3 +555,105 @@ class TestRoleIngestion:
         mock_task_delay.assert_called_once_with(
             role_id=role_id, profile_id=sample_profile.id
         )
+
+    @patch("app.tools.ingestion.scrape_and_extract_role_details", new_callable=AsyncMock)
+    @patch("app.tasks.submission.task_apply_for_role.delay")
+    def test_ingest_role_creates_application_via_task(
+        self,
+        mock_task_delay: Mock,
+        mock_scrape_extract: AsyncMock,
+        client: TestClient,
+        session,
+        sample_profile: Profile,
+    ):
+        """Test that role ingestion triggers the apply task with correct parameters."""
+        job_url = "https://example.com/job"
+
+        # Mock the scraping function
+        mock_scrape_extract.return_value = RoleDetails(
+            title="Backend Developer",
+            company_name="TestCorp",
+            description="Great backend role",
+            location="Remote",
+            requirements="Python, FastAPI",
+            salary_range="$100k-$150k",
+        )
+
+        # Mock the task to just return a successful result
+        mock_task = Mock()
+        mock_task.id = "test_task_id_integration"
+        mock_task_delay.return_value = mock_task
+
+        response = client.post(
+            "/jobs/ingest/url",
+            json={"url": job_url, "profile_id": sample_profile.id},
+            headers={"X-API-Key": "test-api-key"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        role_id = data["role_id"]
+        assert data["task_id"] == "test_task_id_integration"
+
+        # Verify role was created
+        db_role = session.get(Role, role_id)
+        assert db_role is not None
+        assert db_role.title == "Backend Developer"
+        assert db_role.company.name == "TestCorp"
+
+        # Verify task was called with correct parameters (using keyword arguments)
+        mock_task_delay.assert_called_once_with(role_id=role_id, profile_id=sample_profile.id)
+
+    def test_task_creates_application_end_to_end(
+        self, client: TestClient, session, sample_profile: Profile
+    ):
+        """Test that the task actually creates an Application when run directly."""
+        from unittest.mock import Mock
+        from app.tasks.submission import task_apply_for_role
+        from app.models import Role, Company
+        
+        # Create a role manually for this test
+        company = Company(name="DirectTestCorp")
+        session.add(company)
+        session.commit()
+        session.refresh(company)
+        
+        role_data = {
+            "title": "Task Test Developer", 
+            "description": "Test role for task",
+            "posting_url": "https://example.com/direct-task-job",
+            "unique_hash": "test_hash_direct_task",
+            "company_id": company.id,
+        }
+        role = Role.model_validate(role_data)
+        session.add(role)
+        session.commit()
+        session.refresh(role)
+        
+        # Patch the session context to use our test session
+        with patch("app.db.get_session_context") as mock_get_session:
+            mock_get_session.return_value.__enter__.return_value = session
+            mock_get_session.return_value.__exit__.return_value = None
+            
+            # Call the task using apply() for proper execution
+            result = task_apply_for_role.apply(
+                args=[role.id, sample_profile.id], 
+                throw=True
+            ).result
+        
+        assert result["status"] == "success"
+        application_id = result["application_id"]
+        
+        # Verify Application was created in database
+        application = session.exec(
+            select(Application)
+            .where(Application.role_id == role.id)
+            .where(Application.profile_id == sample_profile.id)
+        ).first()
+        
+        assert application is not None
+        assert application.id == application_id
+        assert application.role_id == role.id
+        assert application.profile_id == sample_profile.id
+        assert application.status == ApplicationStatus.DRAFT
+        assert application.celery_task_id is not None  # Should have a task ID

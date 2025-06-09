@@ -4,7 +4,7 @@ import os
 import asyncio
 from typing import Generator, AsyncGenerator
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from datetime import datetime, UTC
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -77,7 +77,9 @@ def session(test_engine) -> Generator[Session, None, None]:
     yield db_session
 
     db_session.close()
-    transaction.rollback()
+    # Only rollback if transaction is still active (hasn't been auto-rolled back due to errors)
+    if transaction.is_active:
+        transaction.rollback()
     connection.close()
 
 
@@ -119,6 +121,26 @@ def mock_external_services():
             "send_sms_message": mock_sms,
             "send_whatsapp_message": mock_whatsapp,
         }
+
+
+@pytest.fixture(autouse=True)
+def enable_celery_eager_mode():
+    """Enable Celery eager mode for tests to run tasks synchronously."""
+    from app.tasks.shared import celery_app
+    
+    # Store original settings
+    original_always_eager = getattr(celery_app.conf, 'task_always_eager', False)
+    original_eager_propagates = getattr(celery_app.conf, 'task_eager_propagates', False)
+    
+    # Enable eager mode
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    
+    yield
+    
+    # Restore original settings
+    celery_app.conf.task_always_eager = original_always_eager
+    celery_app.conf.task_eager_propagates = original_eager_propagates
 
 
 @pytest.fixture
