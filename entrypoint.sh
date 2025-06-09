@@ -123,6 +123,8 @@ if [ "$ENVIRONMENT" != "production" ]; then
     elif [ "$MAIN_COMMAND" = "celery" ]; then # Worker or Beat service
         SHOULD_WAIT_FOR_DB=true
         SHOULD_WAIT_FOR_REDIS=true
+    elif [ "$MAIN_COMMAND" = "alembic" ]; then # Alembic CLI command
+        SHOULD_WAIT_FOR_DB=true
     fi
 else
     echo "✅ Production environment detected. Skipping startup waits and migration checks."

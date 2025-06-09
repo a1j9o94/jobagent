@@ -24,12 +24,11 @@ dependencies = [
     "fastapi==0.104.1",
     "uvicorn[standard]==0.24.0",
     "pydantic[email]==2.10.0",
-    "sqlmodel==0.0.14",
+    "sqlmodel==0.0.19",
     "alembic==1.12.1",
     "psycopg2-binary==2.9.9",
     "celery[redis]==5.3.4",
     "redis==4.6.0",
-    "pydantic-ai==0.0.12",
     "openai==1.54.3",
     "playwright==1.40.0",
     "weasyprint==62.1",
@@ -49,6 +48,8 @@ dependencies = [
     "testcontainers==3.7.1",
     "ruff==0.11.8",
     "fastapi-proxiedheadersmiddleware>=0.9.0",
+    "firecrawl-py>=2.8.0",
+    "pydantic-ai>=0.0.12",
 ]
 
 [project.urls]
@@ -85,6 +86,9 @@ deploy-ssh = "flyctl ssh console --app jobagent"
 logs-local = "docker compose logs -f"
 stop-local = "docker compose down"
 destroy-local = "docker compose down -v --remove-orphans"
+alembic-upgrade = "alembic upgrade head"
+alembic-revision = "alembic revision --autogenerate -m"
+migrate = "bash migrate.sh"
 
 [tool.poe.tasks.run-local]
 shell = """

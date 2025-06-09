@@ -12,6 +12,7 @@ from app.models import (
     Application,
     ApplicationStatus,
     UserPreference,
+    RoleDetails,
 )  # Added Application, ApplicationStatus, UserPreference
 from app.tasks import celery_app  # For disabling celery tasks during tests if needed
 
@@ -439,4 +440,63 @@ class TestRateLimiting:
         # Both scenarios are valid for this test - we're just verifying rate limiting works
         assert successful_requests >= 3 and response.status_code == 429, (
             f"Expected at least 3 successful requests and final rate limit. Got {successful_requests} successful, final status: {response.status_code}"
+        )
+
+
+class TestRoleIngestion:
+    @patch("app.tools.ingestion.scrape_and_extract_role_details", new_callable=AsyncMock)
+    @patch("app.tasks.task_apply_for_role.delay")
+    def test_ingest_role_from_url_success(
+        self,
+        mock_task_delay: Mock,
+        mock_scrape_extract: AsyncMock,
+        client: TestClient,
+        session,
+        sample_profile: Profile,
+    ):
+        """Test successful role ingestion from a URL."""
+        job_url = "https://www.firecrawl.dev/jobs/engineer"
+
+        # Mock the scraping and extraction function to return a RoleDetails object
+        mock_scrape_extract.return_value = RoleDetails(
+            title="Software Engineer",
+            company_name="Firecrawl",
+            description="Build cool stuff with AI and crawlers.",
+            location="San Francisco, CA",
+            requirements="Experience with Python and async.",
+            salary_range="$120,000 - $150,000",
+        )
+
+        # Mock the celery task for applying
+        mock_task = Mock()
+        mock_task.id = "test_apply_task_id"
+        mock_task_delay.return_value = mock_task
+
+        response = client.post(
+            "/jobs/ingest/url",
+            json={"url": job_url, "profile_id": sample_profile.id},
+            headers={"X-API-Key": "test-api-key"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "role_id" in data
+        assert data["task_id"] == "test_apply_task_id"
+        role_id = data["role_id"]
+
+        # Verify role in DB
+        db_role = session.get(Role, role_id)
+        assert db_role is not None
+        assert db_role.title == "Software Engineer"
+        assert db_role.company.name == "Firecrawl"
+        assert db_role.posting_url == job_url
+        assert db_role.location == "San Francisco, CA"
+        assert db_role.requirements == "Experience with Python and async."
+        assert db_role.salary_range == "$120,000 - $150,000"
+
+        # Verify task was called
+        mock_scrape_extract.assert_called_once_with(job_url)
+        mock_task_delay.assert_called_once_with(
+            role_id=role_id, profile_id=sample_profile.id
         )

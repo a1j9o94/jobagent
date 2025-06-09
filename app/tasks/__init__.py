@@ -11,7 +11,7 @@ from .shared import celery_app, debug_task
 # Import all task modules to register tasks
 from .ranking import task_rank_role
 from .documents import task_generate_documents
-from .submission import task_submit_application
+from .submission import task_submit_application, task_apply_for_role
 from .reporting import task_send_daily_report
 from .processing import task_process_new_roles
 
@@ -22,6 +22,7 @@ __all__ = [
     "task_rank_role",
     "task_generate_documents", 
     "task_submit_application",
+    "task_apply_for_role",
     "task_send_daily_report",
     "task_process_new_roles",
 ] 

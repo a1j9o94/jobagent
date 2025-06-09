@@ -67,7 +67,7 @@ COPY --from=builder /code /code
 RUN useradd --create-home --shell /bin/bash jobagent
 
 # Make entrypoint executable and fix ownership
-RUN chmod +x entrypoint.sh release-tasks.sh && chown -R jobagent:jobagent /code /root/.cache/ms-playwright/
+RUN chown -R jobagent:jobagent /code /root/.cache/ms-playwright/ && chmod +x /code/entrypoint.sh /code/release-tasks.sh
 
 USER jobagent
 

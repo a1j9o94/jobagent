@@ -16,6 +16,8 @@ from .preferences import get_user_preference, save_user_preference
 from .pdf_utils import markdown_to_html, render_to_pdf
 from .notifications import send_sms_message, send_whatsapp_message
 from .storage import upload_file_to_storage, ensure_bucket_exists, health_check as storage_health_check
+from .company import get_or_create_company
+from .ingestion import process_ingested_role, scrape_and_extract_role_details
 
 # Re-export all tools for backward compatibility
 __all__ = [
@@ -35,4 +37,7 @@ __all__ = [
     "upload_file_to_storage",
     "ensure_bucket_exists", 
     "storage_health_check",
+    "get_or_create_company",
+    "process_ingested_role",
+    "scrape_and_extract_role_details",
 ] 

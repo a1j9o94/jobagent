@@ -2,10 +2,13 @@
 import logging
 from fastapi import Request, Response, Depends, HTTPException, status
 from sqlmodel import Session, select
+from pydantic import HttpUrl
+from pydantic_core import ValidationError
 
 from app.db import get_session
 from app.models import Application, ApplicationStatus
 from app.tools.notifications import send_sms_message
+from app.tools.ingestion import process_ingested_role
 
 from .shared import app, limiter, get_original_webhook_url, twilio_validator
 
@@ -79,6 +82,40 @@ async def handle_sms_reply(request: Request, session: Session = Depends(get_sess
         )
 
         logger.info(f"SMS webhook OK. SID: {message_sid}, From: {clean_from_number}")
+
+        # --- URL Ingestion Logic ---
+        # First, try to see if the message is a URL
+        try:
+            url = HttpUrl(message_body)
+            # It's a valid URL, so let's process it.
+            logger.info(f"Received URL via SMS: {url}")
+
+            # For now, default to profile_id=1.
+            # TODO: Implement a way to find profile_id from from_number
+            profile_id = 1
+            
+            new_role, task_id = await process_ingested_role(
+                url=str(url), profile_id=profile_id, session=session
+            )
+            
+            send_sms_message(
+                f"✅ Got it! I've added '{new_role.title}' to your queue. Task ID: {task_id}",
+                clean_from_number
+            )
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+        except ValidationError:
+            # Not a valid URL, proceed to process as a command.
+            logger.info("Message is not a URL, processing as command.")
+        except ValueError as e:
+            # Handle errors from process_ingested_role (e.g., duplicates)
+            logger.warning(f"Could not process URL {message_body}: {e}")
+            send_sms_message(f"🤔 Hmm, I couldn't process that job. It might already be in your queue.", clean_from_number)
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            logger.error(f"Error processing URL from SMS: {e}", exc_info=True)
+            send_sms_message(f"😬 Apologies, I ran into an error trying to process that job.", clean_from_number)
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
 
         # Basic message processing
         if message_body.lower() in ["help", "h"]:

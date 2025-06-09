@@ -45,6 +45,7 @@ services:
       AWS_ACCESS_KEY_ID: "testminioadmin"
       AWS_SECRET_ACCESS_KEY: "testminioadmin"
       S3_BUCKET_NAME: "test-job-agent-documents"
+      FIRECRAWL_API_KEY: "test-firecrawl-key"
       # Twilio vars for tests
       TWILIO_ACCOUNT_SID: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
       TWILIO_AUTH_TOKEN: "test_twilio_auth_token_here"
@@ -62,13 +63,26 @@ services:
     # entrypoint.sh is not strictly needed if migrations aren't run against the test DB via this service.
     # However, if `wait_for_service` or other setup in entrypoint.sh is desired, it could be used.
     # For simplicity, directly running pytest is common for a `tests` service.
-    command: ["pytest", "-v", "--tb=short", "tests/"] # Target tests directory
+    command: >
+      sh -c "
+        echo '--- Checking Alembic versions directory ---' &&
+        ls -l alembic/versions &&
+        echo '--- Checking Alembic history ---' &&
+        alembic history -v &&
+        echo '--- Checking Alembic current revision ---' &&
+        alembic current &&
+        echo '--- Running Alembic upgrade head ---' &&
+        alembic upgrade head &&
+        echo '--- Starting Pytest ---' &&
+        pytest -v --tb=short tests/
+      "
     volumes:
       # Mount app and tests code for easy test development
       - ./app:/code/app:ro
-      - ./tests:/code/tests:ro 
-      # Coverage reports or other test artifacts can be mounted out if needed:
-      # - ./coverage_reports:/code/coverage_reports
+      - ./tests:/code/tests:ro
+      - ./alembic:/code/alembic:ro # Mount alembic directory
+    # Coverage reports or other test artifacts can be mounted out if needed:
+    # - ./coverage_reports:/code/coverage_reports
 
 # Note: This test compose file does not include a MinIO instance for tests.
 # If your tests require a live S3-compatible store, you would add a `test_minio` service similar to the main compose file.

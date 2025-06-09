@@ -10,6 +10,8 @@ from datetime import datetime, UTC
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlmodel import Session, create_engine, SQLModel
 from fastapi.testclient import TestClient
+from alembic.config import Config
+from alembic import command
 
 from app.api_server import app
 from app.db import get_session
@@ -60,13 +62,8 @@ def test_engine():
     database_url = os.environ["DATABASE_URL"]
     engine = create_engine(database_url, echo=False)
 
-    # Create all tables
-    SQLModel.metadata.create_all(engine)
-
     yield engine
 
-    # Note: We don't drop tables here since other tests might be running
-    # The database container will be recreated between test runs
     engine.dispose()
 
 
@@ -168,6 +165,9 @@ def sample_role_data(sample_company: Company) -> dict:
         "unique_hash": "test_hash_123",
         "company_id": sample_company.id,
         "created_at": datetime.now(UTC),
+        "location": "Remote",
+        "requirements": "5+ years of Python",
+        "salary_range": "$150,000 - $200,000",
     }
 
 

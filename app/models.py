@@ -1,9 +1,9 @@
 # app/models.py
 from enum import Enum
-from datetime import datetime, date, UTC
-from typing import List, Optional, Set, Dict, Any
-from sqlmodel import SQLModel, Field, Relationship, Column, String, Text
-from pydantic import BaseModel, SecretStr
+from datetime import datetime, UTC
+from typing import List, Optional, Dict, Any
+from sqlmodel import SQLModel, Field, Relationship, Column, Text
+from pydantic import BaseModel
 import sqlalchemy as sa
 
 
@@ -70,6 +70,16 @@ class ResumeDraft(BaseModel):
     identified_skills: List[str]
 
 
+class RoleDetails(BaseModel):
+    """Details of a job role extracted from a job posting."""
+    title: str = Field(..., description="The title of the job role.")
+    company_name: str = Field(..., description="The name of the company hiring for the role.")
+    description: Optional[str] = Field(None, description="A detailed description of the job role and responsibilities.")
+    location: Optional[str] = Field(None, description="The location of the job (e.g., 'San Francisco, CA', 'Remote').")
+    requirements: Optional[str] = Field(None, description="The skills, qualifications, and experience required for the role.")
+    salary_range: Optional[str] = Field(None, description="The salary range for the role (e.g., '$150,000 - $200,000').")
+
+
 # --- SQLModel Tables ---
 class Skill(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -111,6 +121,9 @@ class Role(SQLModel, table=True):
     rank_rationale: Optional[str] = Field(default=None, sa_column=Column(Text))
     company_id: int = Field(foreign_key="company.id")
     created_at: datetime = Field(default_factory=utc_now)
+    location: Optional[str] = Field(default=None)
+    requirements: Optional[str] = Field(default=None, sa_column=Column(Text))
+    salary_range: Optional[str] = Field(default=None)
 
     company: Company = Relationship(back_populates="roles")
     skills: List[Skill] = Relationship(link_model=RoleSkillLink)

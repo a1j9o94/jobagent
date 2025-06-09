@@ -22,6 +22,7 @@ services:
                             # The command uses --reload, so it should be rw.
       # Correcting volume mount for hot reload based on typical uvicorn --reload usage:
       - ./app:/code/app # :rw is default, suitable for reload
+      - ./alembic:/code/alembic
     # The entrypoint.sh handles migrations and then starts the app.
     # The command in Dockerfile is CMD ["uvicorn", ...], overridden by entrypoint.sh if entrypoint is used as CMD/ENTRYPOINT.
     # Here, the command for the api service should be what entrypoint.sh expects as arguments for the api.
@@ -73,9 +74,11 @@ services:
 
   db:
     image: postgres:16-alpine
+    env_file:
+      - .env # Load environment variables from .env file
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-jobagent_user} # Added default values
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_postgres_password_123}
       POSTGRES_DB: ${POSTGRES_DB:-jobagent}
     volumes:
       - postgres_data:/var/lib/postgresql/data
