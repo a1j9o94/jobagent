@@ -21,6 +21,11 @@ __all__ = [
     "generate_daily_report",
     "get_user_preference",
     "save_user_preference",
+    "send_sms_message",
+    "send_whatsapp_message",
+    "upload_file_to_storage",
+    "ensure_bucket_exists",
+    "storage_health_check",
 ]
 
 

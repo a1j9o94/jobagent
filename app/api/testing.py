@@ -11,7 +11,7 @@ from app.db import get_session
 from app.models import Profile, Company, Role, Application, RoleStatus, ApplicationStatus
 from app.tools import generate_unique_hash, ranking_agent
 from app.tasks import task_generate_documents
-from app.notifications import send_sms_message, send_whatsapp_message
+from app.tools.notifications import send_sms_message, send_whatsapp_message
 
 from .shared import app
 

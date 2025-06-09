@@ -7,8 +7,8 @@ from pydantic_ai import Agent
 
 from app.models import ResumeDraft, Application, ApplicationStatus
 from app.db import get_session_context
-from app.storage import upload_file_to_storage
-from app.pdf_utils import render_to_pdf
+from app.tools.storage import upload_file_to_storage
+from app.tools.pdf_utils import render_to_pdf
 
 logger = logging.getLogger(__name__)
 

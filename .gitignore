@@ -95,14 +95,5 @@ secrets.json
 *.pem
 *.key
 
-# Docker related from build context, if not needed in repo
-# Dockerfile # Usually committed
-# docker-compose.yml # Usually committed
-# .dockerignore # Usually committed
-
-# alembic/versions - these are generated and should be committed
-# alembic/versions/
-
-# design_doc.md and README.md are usually committed
-# design_doc.md
-# README.md
+# Backup files
+*.bak

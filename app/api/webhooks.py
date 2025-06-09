@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from app.db import get_session
 from app.models import Application, ApplicationStatus
-from app.notifications import send_sms_message
+from app.tools.notifications import send_sms_message
 
 from .shared import app, limiter, get_original_webhook_url, twilio_validator
 

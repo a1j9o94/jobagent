@@ -5,7 +5,7 @@ from typing import Dict, Any
 
 from app.models import Application, ApplicationStatus
 from app.db import get_session_context
-from app.automation import BrowserAutomation, FormSubmissionError
+from app.tools.automation import BrowserAutomation, FormSubmissionError
 from app.security import decrypt_password
 
 logger = logging.getLogger(__name__)

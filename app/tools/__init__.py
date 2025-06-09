@@ -13,6 +13,9 @@ from .documents import resume_agent, draft_and_upload_documents
 from .submission import submit_application
 from .reporting import generate_daily_report
 from .preferences import get_user_preference, save_user_preference
+from .pdf_utils import markdown_to_html, render_to_pdf
+from .notifications import send_sms_message, send_whatsapp_message
+from .storage import upload_file_to_storage, ensure_bucket_exists, health_check as storage_health_check
 
 # Re-export all tools for backward compatibility
 __all__ = [
@@ -25,4 +28,11 @@ __all__ = [
     "generate_daily_report",
     "get_user_preference",
     "save_user_preference",
+    "markdown_to_html",
+    "render_to_pdf",
+    "send_sms_message",
+    "send_whatsapp_message",
+    "upload_file_to_storage",
+    "ensure_bucket_exists", 
+    "storage_health_check",
 ] 

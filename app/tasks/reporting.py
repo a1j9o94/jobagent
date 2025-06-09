@@ -1,7 +1,7 @@
 # app/tasks/reporting.py
 import logging
 
-from app.notifications import send_sms_message
+from app.tools.notifications import send_sms_message
 from .shared import celery_app
 
 logger = logging.getLogger(__name__)

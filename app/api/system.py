@@ -4,8 +4,8 @@ from datetime import datetime, UTC
 from fastapi import Response, status
 
 from app.db import health_check as db_health_check
-from app.storage import health_check as storage_health_check
-from app.notifications import health_check as notification_health_check
+from app.tools.storage import health_check as storage_health_check
+from app.tools.notifications import health_check as notification_health_check
 
 from .shared import app, redis_health_check, STORAGE_PROVIDER, API_BASE_URL
 

@@ -221,11 +221,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger('s3_init')
 
 try:
-    logger.info('Attempting to import app.storage...')
-    from app.storage import ensure_bucket_exists, s3_client, S3_BUCKET_NAME
-    logger.info('Successfully imported app.storage.')
+    logger.info('Attempting to import app.tools...')
+    from app.tools import ensure_bucket_exists, s3_client, S3_BUCKET_NAME
+    logger.info('Successfully imported app.tools.')
     if not s3_client:
-        logger.warning('S3 client in app.storage is not initialized. This is normal for external S3 services.')
+        logger.warning('S3 client in app.tools is not initialized. This is normal for external S3 services.')
     if not S3_BUCKET_NAME:
         logger.error('S3_BUCKET_NAME is not configured. Cannot ensure bucket exists.')
         raise ValueError('S3_BUCKET_NAME not configured')
@@ -236,7 +236,7 @@ try:
     else:
         logger.info('✅ Object storage bucket \\'%s\\' check completed (may already exist).', S3_BUCKET_NAME)
 except ImportError as e:
-    logger.error('Failed to import app.storage: %s. Ensure PYTHONPATH is correct or app is installed.', e)
+    logger.error('Failed to import app.tools: %s. Ensure PYTHONPATH is correct or app is installed.', e)
     exit(1)
 except ConnectionError as e:
     logger.warning('S3 connection issue during init (this is normal for external services): %s', e)
