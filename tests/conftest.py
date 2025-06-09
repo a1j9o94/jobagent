@@ -106,7 +106,7 @@ def mock_external_services():
     with (
         patch("app.tools.ranking_agent") as mock_ranking_agent,
         patch("app.tools.resume_agent") as mock_resume_agent,
-        patch("app.tools.upload_file_to_storage") as mock_upload,
+        patch("app.storage.upload_file_to_storage") as mock_upload,
         patch("app.notifications.send_sms_message") as mock_sms,
         patch("app.notifications.send_whatsapp_message") as mock_whatsapp,
     ):

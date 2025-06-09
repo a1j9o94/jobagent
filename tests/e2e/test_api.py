@@ -58,10 +58,10 @@ class TestHealthEndpoint:
         # Assuming db is up via test_engine.
         # Mock redis, storage, notifications health checks if they are not actually running or are flaky.
         with (
-            patch("app.api_server.db_health_check", return_value=True),
-            patch("app.api_server.redis_health_check", return_value=True),
-            patch("app.api_server.storage_health_check", return_value=True),
-            patch("app.api_server.notification_health_check", return_value=True),
+            patch("app.api.system.db_health_check", return_value=True),
+            patch("app.api.system.redis_health_check", return_value=True),
+            patch("app.api.system.storage_health_check", return_value=True),
+            patch("app.api.system.notification_health_check", return_value=True),
         ):
             response = client.get("/health")
             assert response.status_code == 200
@@ -76,10 +76,10 @@ class TestHealthEndpoint:
 
     def test_health_check_degraded(self, client: TestClient):
         with (
-            patch("app.api_server.db_health_check", return_value=True),
-            patch("app.api_server.redis_health_check", return_value=False),
-            patch("app.api_server.storage_health_check", return_value=True),
-            patch("app.api_server.notification_health_check", return_value=True),
+            patch("app.api.system.db_health_check", return_value=True),
+            patch("app.api.system.redis_health_check", return_value=False),
+            patch("app.api.system.storage_health_check", return_value=True),
+            patch("app.api.system.notification_health_check", return_value=True),
         ):
             response = client.get("/health")
             # FastAPI returns Response object; .json() might fail if content isn't valid JSON after str()
@@ -294,8 +294,8 @@ class TestSMSWebhook:
         "MessageSid": "SM_test_generic",
     }
 
-    @patch("app.api_server.twilio_validator")
-    @patch("app.api_server.send_sms_message", return_value=True)
+    @patch("app.api.webhooks.twilio_validator")
+    @patch("app.api.webhooks.send_sms_message", return_value=True)
     def test_sms_webhook_help_command(
         self, mock_send_msg, mock_validator, client: TestClient
     ):
@@ -306,8 +306,8 @@ class TestSMSWebhook:
         mock_send_msg.assert_called_once()
         assert "Job Agent Commands" in mock_send_msg.call_args[0][0]
 
-    @patch("app.api_server.twilio_validator")
-    @patch("app.api_server.send_sms_message", return_value=True)
+    @patch("app.api.webhooks.twilio_validator")
+    @patch("app.api.webhooks.send_sms_message", return_value=True)
     def test_sms_webhook_status_command(
         self, mock_send_msg, mock_validator, client: TestClient, session
     ):
@@ -317,9 +317,9 @@ class TestSMSWebhook:
         mock_validator.validate.assert_called_once()
         mock_send_msg.assert_called_once()
 
-    @patch("app.api_server.twilio_validator")
+    @patch("app.api.webhooks.twilio_validator")
     @patch(
-        "app.api_server.send_sms_message", return_value=True
+        "app.api.webhooks.send_sms_message", return_value=True
     )  # Mock sending confirmation
     @patch(
         "app.tasks.task_send_daily_report.delay"
@@ -337,8 +337,8 @@ class TestSMSWebhook:
             self.webhook_data_report_cmd["From"],
         )
 
-    @patch("app.api_server.twilio_validator")
-    @patch("app.api_server.send_sms_message", return_value=True)
+    @patch("app.api.webhooks.twilio_validator")
+    @patch("app.api.webhooks.send_sms_message", return_value=True)
     def test_sms_webhook_generic_message(
         self, mock_send_msg, mock_validator, client: TestClient
     ):
@@ -349,7 +349,7 @@ class TestSMSWebhook:
         mock_send_msg.assert_called_once()
         assert "Got your response!" in mock_send_msg.call_args[0][0]
 
-    @patch("app.api_server.twilio_validator")
+    @patch("app.api.webhooks.twilio_validator")
     def test_sms_webhook_invalid_signature(self, mock_validator, client: TestClient):
         mock_validator.validate.return_value = False
         response = client.post("/webhooks/sms", data=self.webhook_data_generic)
@@ -384,8 +384,8 @@ class TestWhatsAppWebhook:
         "MessageSid": "SM_test_generic",
     }
 
-    @patch("app.api_server.twilio_validator")
-    @patch("app.api_server.send_whatsapp_message", return_value=True)
+    @patch("app.api.webhooks.twilio_validator")
+    @patch("app.api.testing.send_whatsapp_message", return_value=True)
     def test_whatsapp_webhook_help_command(
         self, mock_send_msg, mock_validator, client: TestClient
     ):
@@ -393,7 +393,7 @@ class TestWhatsAppWebhook:
         response = client.post("/webhooks/whatsapp", data=self.webhook_data_help)
         assert response.status_code == 404  # Route no longer exists
 
-    @patch("app.api_server.twilio_validator")
+    @patch("app.api.webhooks.twilio_validator")
     def test_whatsapp_webhook_invalid_signature(
         self, mock_validator, client: TestClient
     ):

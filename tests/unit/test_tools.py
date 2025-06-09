@@ -3,13 +3,6 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, UTC
 from sqlmodel import select  # Added for SQLModel queries
-from app.tools import (
-    generate_unique_hash,
-    get_user_preference,
-    save_user_preference,
-    rank_role,  # Added for TestAsyncTools
-    draft_and_upload_documents,  # Added for TestAsyncTools
-)
 from app.models import (
     Profile,
     UserPreference,
@@ -21,6 +14,10 @@ from app.models import (
     ApplicationStatus,
     Company,
 )  # Added missing imports
+from app.tools.preferences import get_user_preference, save_user_preference
+from app.tools.ranking import rank_role
+from app.tools.documents import draft_and_upload_documents
+from app.tools.utils import generate_unique_hash
 from app.db import (
     get_session_context,
 )  # For direct db interactions if needed outside fixtures
@@ -59,7 +56,7 @@ class TestTools:
 
         # Test retrieval using the function from app.tools
         # Mock the session context to use our test session
-        with patch("app.tools.get_session_context") as mock_get_session:
+        with patch("app.tools.preferences.get_session_context") as mock_get_session:
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
 
@@ -70,7 +67,7 @@ class TestTools:
 
     def test_get_user_preference_not_exists(self, session, sample_profile):
         """Test retrieving a non-existent user preference."""
-        with patch("app.tools.get_session_context") as mock_get_session:
+        with patch("app.tools.preferences.get_session_context") as mock_get_session:
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
 
@@ -81,7 +78,7 @@ class TestTools:
 
     def test_save_user_preference_new(self, session, sample_profile):
         """Test saving a new user preference."""
-        with patch("app.tools.get_session_context") as mock_get_session:
+        with patch("app.tools.preferences.get_session_context") as mock_get_session:
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
 
@@ -100,7 +97,7 @@ class TestTools:
 
     def test_save_user_preference_update(self, session, sample_profile):
         """Test updating an existing user preference."""
-        with patch("app.tools.get_session_context") as mock_get_session:
+        with patch("app.tools.preferences.get_session_context") as mock_get_session:
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
 
@@ -140,8 +137,8 @@ class TestAsyncTools:
             session.refresh(sample_role)
 
         with (
-            patch("app.tools.ranking_agent") as mock_agent,
-            patch("app.tools.get_session_context") as mock_get_session,
+            patch("app.tools.ranking.ranking_agent") as mock_agent,
+            patch("app.tools.ranking.get_session_context") as mock_get_session,
         ):
             # Mock the session context to return our test session
             mock_get_session.return_value.__enter__.return_value = session
@@ -185,8 +182,8 @@ class TestAsyncTools:
             session.refresh(sample_role)
 
         with (
-            patch("app.tools.ranking_agent") as mock_agent,
-            patch("app.tools.get_session_context") as mock_get_session,
+            patch("app.tools.ranking.ranking_agent") as mock_agent,
+            patch("app.tools.ranking.get_session_context") as mock_get_session,
         ):
             # Mock the session context to return our test session
             mock_get_session.return_value.__enter__.return_value = session
@@ -235,12 +232,12 @@ class TestAsyncTools:
         application.profile = sample_profile
 
         with (
-            patch("app.tools.resume_agent") as mock_resume_agent,
-            patch("app.tools.upload_file_to_storage") as mock_upload,
+            patch("app.tools.documents.resume_agent") as mock_resume_agent,
+            patch("app.tools.documents.upload_file_to_storage") as mock_upload,
             patch(
-                "app.tools.render_to_pdf", return_value=b"pdf_bytes"
+                "app.tools.documents.render_to_pdf", return_value=b"pdf_bytes"
             ) as mock_render_to_pdf,
-            patch("app.tools.get_session_context") as mock_get_session,
+            patch("app.tools.documents.get_session_context") as mock_get_session,
         ):
             # Mock the session context to return our test session
             mock_get_session.return_value.__enter__.return_value = session
