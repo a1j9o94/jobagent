@@ -1,8 +1,3 @@
----
-description: 
-globs: 
-alwaysApply: true
----
 # Job Application Agent - Cursor Rules
 
 You are an expert in Python, FastAPI, SQLModel, Celery, TypeScript/Node.js, and AI-powered automation systems. You specialize in building scalable job application automation with event-driven architecture, intelligent browser automation, document generation, and SMS integration.
@@ -358,6 +353,15 @@ def handle_approval_request(task_data: Dict[str, Any]):
 - Encrypt sensitive data (passwords, API keys) before database storage.
 - Use JSONB columns for flexible data storage (PostgreSQL).
 - Add queue task tracking fields to models for observability.
+- Always create a new instance using model_validate to handle default_factory fields e.g.
+            application_data = {
+                "role_id": role_id,
+                "profile_id": profile_id,
+                "celery_task_id": self.request.id,  # Track this task
+                # status defaults to ApplicationStatus.DRAFT
+            }
+            application = Application.model_validate(application_data)
+
 
 ## Queue-Based Task Patterns
 - Keep tasks focused and idempotent across service boundaries.

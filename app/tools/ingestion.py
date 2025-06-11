@@ -4,7 +4,7 @@ from sqlmodel import Session, select
 from firecrawl import AsyncFirecrawlApp
 from pydantic_ai import Agent
 
-from app.models import Role, Profile, RoleDetails
+from app.models import Role, Profile, RoleDetails, Skill
 from app.tools.company import get_or_create_company
 from app.tools.utils import generate_unique_hash
 from app.tasks import task_apply_for_role
@@ -22,8 +22,27 @@ role_extraction_agent = Agent(
     You are an expert at extracting structured information from job postings.
     Given the markdown content of a job posting, extract the required fields.
     If a field is not present in the text, you can leave it as null.
+    
+    For the skills field, extract key technical skills, leadership, management qualifactions, soft skills etc.
+    programming languages, frameworks, tools, and technologies mentioned in the job posting. Focus on concrete, searchable 
+    skills. Examples: "Python", "React", "AWS", "Salesforce", "Hubspot", "Outreach.io", "P&L Management", "People leadership", "Sales", "Customer Success", "Marketing", etc.
     """,
 )
+
+
+def get_or_create_skill(session: Session, skill_name: str) -> Skill:
+    """
+    Get an existing skill by name or create a new one.
+    """
+    existing_skill = session.exec(select(Skill).where(Skill.name == skill_name)).first()
+    
+    if existing_skill:
+        return existing_skill
+    
+    new_skill = Skill(name=skill_name)
+    session.add(new_skill)
+    session.flush()  # Flush to get the ID without committing
+    return new_skill
 
 
 async def scrape_and_extract_role_details(url: str) -> RoleDetails:
@@ -80,7 +99,7 @@ async def process_ingested_role(url: str, profile_id: int, session: Session) -> 
 
     # Use model_dump() here to convert the Pydantic model to a dict for Role creation
     role_data = {
-        **role_details.model_dump(),
+        **role_details.model_dump(exclude={"skills"}),  # Exclude skills from the role data
         "company_id": company.id,
         "posting_url": url,
         "unique_hash": unique_hash,
@@ -88,6 +107,14 @@ async def process_ingested_role(url: str, profile_id: int, session: Session) -> 
     new_role = Role.model_validate(role_data)
 
     session.add(new_role)
+    session.flush()  # Flush to get the role ID without committing
+
+    # Create and link skills to the role
+    for skill_name in role_details.skills:
+        if skill_name.strip():  # Skip empty skill names
+            skill = get_or_create_skill(session, skill_name.strip())
+            new_role.skills.append(skill)
+
     session.commit()
     session.refresh(new_role)
 

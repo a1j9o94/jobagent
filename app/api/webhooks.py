@@ -99,7 +99,7 @@ async def handle_sms_reply(request: Request, session: Session = Depends(get_sess
             )
             
             send_sms_message(
-                f"✅ Got it! I've added '{new_role.title}' to your queue. Task ID: {task_id}",
+                f"✅ Got it! I've added '{new_role.title}' to your queue. Task ID: {task_id}. Key requirements: {new_role.requirements}",
                 clean_from_number
             )
             return Response(status_code=status.HTTP_204_NO_CONTENT)

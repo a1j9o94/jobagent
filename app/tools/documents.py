@@ -9,6 +9,7 @@ from app.models import ResumeDraft, Application, ApplicationStatus
 from app.db import get_session_context
 from app.tools.storage import upload_file_to_storage
 from app.tools.pdf_utils import render_to_pdf
+from app.tools.notifications import send_sms_message
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,35 @@ resume_agent = Agent(
     Create compelling, ATS-optimized resumes and cover letters tailored to specific job postings.
     Focus on quantifiable achievements and relevant keywords.""",
 )
+
+
+def send_documents_ready_notification(application: Application, resume_url: str, cover_letter_url: str):
+    """Send notification that documents are ready with links."""
+    try:
+        message = (
+            f"📄 Your application documents are ready!\n\n"
+            f"Job: {application.role.title}\n"
+            f"Company: {application.role.company.name}\n\n"
+            f"Resume: {resume_url}\n"
+            f"Cover Letter: {cover_letter_url}\n\n"
+            f"Documents saved and ready for submission!"
+        )
+        
+        # Get user's phone number from profile preferences
+        phone_number = None
+        for pref in application.profile.preferences:
+            if pref.key == "phone":
+                phone_number = pref.value
+                break
+
+        if phone_number:
+            send_sms_message(message, phone_number)
+            logger.info(f"Sent documents ready notification for application {application.id}")
+        else:
+            logger.warning(f"No phone number found for profile {application.profile.id}")
+
+    except Exception as e:
+        logger.error(f"Error sending documents ready notification: {e}")
 
 
 async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
@@ -32,34 +62,32 @@ async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
         role = application.role
         profile = application.profile
 
-        # Check if we should use a mock for testing
-        use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
-
         try:
-            if use_mock:
-                # Use hardcoded mock data instead of calling the LLM
-                draft = ResumeDraft(
-                    resume_md="# Mock Resume\n\nThis is a test.",
-                    cover_letter_md="# Mock Cover Letter\n\nThis is a test.",
-                    identified_skills=["testing", "mocking"],
-                )
-                logger.info("Using mock LLM data for document generation.")
-            else:
-                # Generate documents using LLM
-                prompt = f"""
-                Create a resume and cover letter for this application:
-                
-                Job: {role.title} at {role.company.name}
-                Description: {role.description}
-                
-                Candidate: {profile.headline}
-                Summary: {profile.summary}
-                
-                Make the resume ATS-friendly and the cover letter compelling but concise.
-                """
 
-                result = await resume_agent.run(prompt)
-                draft = result.data
+            # Generate documents using LLM
+            prompt = f"""
+            Create a resume and cover letter for this application:
+            
+            Job: {role.title} at {role.company.name}
+            Description: {role.description}
+            Location: {role.location or 'Not specified'}
+            Requirements: {role.requirements or 'Not specified'}
+            Salary Range: {role.salary_range or 'Not specified'}
+            Job URL: {role.posting_url}
+            {f'Role Ranking Score: {role.rank_score}/1.0' if role.rank_score else ''}
+            {f'Why this role fits: {role.rank_rationale}' if role.rank_rationale else ''}
+            {f'Required Skills: {", ".join([skill.name for skill in role.skills])}' if role.skills else ''}
+            
+            Candidate: {profile.headline}
+            Summary: {profile.summary}
+            Applicant preferences: {profile.preferences}
+            
+            Make the resume ATS-friendly and the cover letter compelling but concise.
+            Focus on the specific requirements and skills mentioned above.
+            """
+
+            result = await resume_agent.run(prompt)
+            draft = result.data
 
             # Convert to PDF and upload
             resume_pdf = render_to_pdf(draft.resume_md)
@@ -86,6 +114,9 @@ async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
                 application.cover_letter_s3_url = cover_letter_url
                 application.status = ApplicationStatus.READY_TO_SUBMIT
                 session.commit()
+
+                # Send notification with document links
+                send_documents_ready_notification(application, resume_url, cover_letter_url)
 
                 logger.info(f"Documents generated for application {application_id}")
                 return {

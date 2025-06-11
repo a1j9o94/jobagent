@@ -78,6 +78,7 @@ class RoleDetails(BaseModel):
     location: Optional[str] = Field(None, description="The location of the job (e.g., 'San Francisco, CA', 'Remote').")
     requirements: Optional[str] = Field(None, description="The skills, qualifications, and experience required for the role.")
     salary_range: Optional[str] = Field(None, description="The salary range for the role (e.g., '$150,000 - $200,000').")
+    skills: List[str] = Field(default_factory=list, description="A list of key skills and technologies required for this role (e.g., ['Python', 'SQL', 'Machine Learning', 'AWS']).")
 
 
 # --- SQLModel Tables ---
@@ -155,6 +156,7 @@ class Application(SQLModel, table=True):
     profile: "Profile" = Relationship(back_populates="applications")
 
 
+#TODO: Change preferences to "Memory" In practice I'm using it as a key-value store for everything like linkedin url, phone number, etc.
 class UserPreference(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     profile_id: int = Field(foreign_key="profile.id")

@@ -2,6 +2,9 @@
 import logging
 from datetime import datetime
 
+from celery import chain
+from app.tasks.documents import task_generate_documents
+
 from .shared import celery_app
 from app.queue_manager import queue_manager, TaskType
 from app.models import Application, ApplicationStatus
@@ -12,13 +15,30 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, max_retries=2)
-def task_submit_application_queue(self, application_id: int):
+def task_submit_application_queue(self, documents_result=None, application_id: int = None):
     """Task to submit an application using the new queue-based Node.js service."""
     try:
+        # Handle both chained calls (documents_result contains application_id) 
+        # and direct calls (application_id passed directly)
+        if documents_result and isinstance(documents_result, dict):
+            app_id = documents_result.get('application_id') or application_id
+            logger.info(f"Chained call: documents generated with result: {documents_result.get('status')}")
+        else:
+            app_id = application_id or documents_result
+            logger.info(f"Direct call with application_id: {app_id}")
+        
+        if not app_id:
+            return {"status": "error", "message": "No application_id provided"}
+
         with get_session_context() as session:
-            application = session.get(Application, application_id)
+            application = session.get(Application, app_id)
             if not application:
                 return {"status": "error", "message": "Application not found"}
+
+            # Verify documents are ready before proceeding
+            if not application.resume_s3_url:
+                logger.error(f"Application {app_id} missing resume URL")
+                return {"status": "error", "message": "Resume not ready", "application_id": app_id}
 
             role = application.role
             profile = application.profile
@@ -26,7 +46,7 @@ def task_submit_application_queue(self, application_id: int):
             # Get user preferences for form data
             preferences = {pref.key: pref.value for pref in profile.preferences}
 
-            # Prepare user data
+            # Prepare user data (now including the generated document URLs)
             user_data = {
                 "name": f"{preferences.get('first_name', '')} {preferences.get('last_name', '')}".strip(),
                 "first_name": preferences.get("first_name", ""),
@@ -34,6 +54,7 @@ def task_submit_application_queue(self, application_id: int):
                 "email": preferences.get("email", ""),
                 "phone": preferences.get("phone", ""),
                 "resume_url": application.resume_s3_url,
+                "cover_letter_url": application.cover_letter_s3_url,
                 "linkedin_url": preferences.get("linkedin_url", ""),
                 "github_url": preferences.get("github_url", ""),
                 "portfolio_url": preferences.get("portfolio_url", ""),
@@ -69,19 +90,20 @@ def task_submit_application_queue(self, application_id: int):
             application.queue_task_id = task_id
             session.commit()
 
-            logger.info(f"Published application {application_id} to queue with task ID {task_id}")
+            logger.info(f"Published application {app_id} to queue with task ID {task_id}")
             return {
                 "status": "queued", 
                 "queue_task_id": task_id,
-                "application_id": application_id
+                "application_id": app_id,
+                "documents_result": documents_result
             }
 
     except Exception as e:
-        logger.error(f"Failed to queue application {application_id}: {e}")
+        logger.error(f"Failed to queue application: {e}")
         if self.request.retries < self.max_retries:
             countdown = 60 * (self.request.retries + 1)  # 1 min, 2 min
             raise self.retry(countdown=countdown, exc=e)
-        return {"status": "error", "message": str(e), "application_id": application_id}
+        return {"status": "error", "message": str(e)}
 
 
 # Legacy task for backward compatibility (will be deprecated)
@@ -123,11 +145,26 @@ def task_apply_for_role(self, role_id: int, profile_id: int):
             session.refresh(application)
             
             logger.info(f"Created application {application.id} for role {role_id} and profile {profile_id}")
+
+            # Use Celery chain to ensure documents are generated before submission
+            workflow = chain(
+                task_generate_documents.s(application.id),
+                task_submit_application_queue.s(application.id)
+            )
+            
+            # Execute the workflow asynchronously
+            workflow_result = workflow.apply_async()
+            
+            # Get the first task ID (document generation) for tracking
+            generate_task_id = workflow_result.id
+
             return {
                 "status": "success", 
                 "application_id": application.id,
                 "role_id": role_id, 
-                "profile_id": profile_id
+                "profile_id": profile_id,
+                "workflow_id": generate_task_id,
+                "message": "Application workflow started: documents will be generated first, then submitted"
             }
             
     except Exception as e:
@@ -135,4 +172,37 @@ def task_apply_for_role(self, role_id: int, profile_id: int):
         if self.request.retries < self.max_retries:
             countdown = 60 * (self.request.retries + 1)  # 1 min, 2 min, 3 min
             raise self.retry(countdown=countdown, exc=e)
-        return {"status": "error", "message": str(e), "role_id": role_id, "profile_id": profile_id} 
+        return {"status": "error", "message": str(e), "role_id": role_id, "profile_id": profile_id}
+
+
+@celery_app.task(bind=True, max_retries=2)
+def task_generate_and_submit_application(self, application_id: int):
+    """
+    Convenience task that chains document generation and submission.
+    Use this as an alternative to task_apply_for_role when you already have an Application.
+    """
+    logger.info(f"Starting document generation and submission workflow for application {application_id}")
+    
+    try:
+        # Use Celery chain to ensure documents are generated before submission
+        workflow = chain(
+            task_generate_documents.s(application_id),
+            task_submit_application_queue.s(application_id)
+        )
+        
+        # Execute the workflow
+        workflow_result = workflow.apply_async()
+        
+        return {
+            "status": "workflow_started",
+            "application_id": application_id,
+            "workflow_id": workflow_result.id,
+            "message": "Document generation and submission workflow started"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to start workflow for application {application_id}: {e}")
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (self.request.retries + 1)
+            raise self.retry(countdown=countdown, exc=e)
+        return {"status": "error", "message": str(e), "application_id": application_id} 

@@ -10,7 +10,6 @@ backward compatibility with existing imports.
 from .utils import generate_unique_hash
 from .ranking import ranking_agent, rank_role
 from .documents import resume_agent, draft_and_upload_documents
-from .submission import submit_application
 from .reporting import generate_daily_report
 from .preferences import get_user_preference, save_user_preference
 from .pdf_utils import markdown_to_html, render_to_pdf
@@ -26,7 +25,6 @@ __all__ = [
     "rank_role",
     "resume_agent", 
     "draft_and_upload_documents",
-    "submit_application",
     "generate_daily_report",
     "get_user_preference",
     "save_user_preference",
