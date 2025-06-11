@@ -125,7 +125,7 @@ if [ "$ENVIRONMENT" != "production" ]; then
         SHOULD_WAIT_FOR_REDIS=true
     elif [ "$MAIN_COMMAND" = "alembic" ]; then # Alembic CLI command
         SHOULD_WAIT_FOR_DB=true
-    elif [[ "$MAIN_COMMAND" == *"node"* ]] || [[ "$1" == *"node"* ]]; then # Node.js service
+    elif [[ "$MAIN_COMMAND" == *"node"* ]] || [[ "$1" == *"node"* ]] || [[ "$*" == *"node"* ]]; then # Node.js service
         SHOULD_WAIT_FOR_REDIS=true
     fi
 else

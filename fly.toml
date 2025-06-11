@@ -24,7 +24,7 @@ primary_region = "sea"  # Change to your preferred region (sea, ord, fra, etc.)
   app = "./entrypoint.sh uvicorn app.api_server:app --host 0.0.0.0 --port 8000"
   worker = "./entrypoint.sh celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2"
   beat = "./entrypoint.sh celery -A app.tasks.celery_app beat --loglevel=info"
-  node-scraper = "cd node-scraper && node dist/queue-consumer.js"
+  node-scraper = "./entrypoint.sh sh -c 'cd node-scraper && node dist/queue-consumer.js'"
 
 [[vm]]
   size = "shared-cpu-2x"
