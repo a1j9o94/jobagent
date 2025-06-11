@@ -53,10 +53,8 @@ COPY node-scraper/ ./node-scraper/
 # Install both main and dev dependencies for testing capabilities
 RUN uv pip install --system --no-cache-dir ".[dev]"
 
-# Install Playwright browsers and their system dependencies
-# This command installs browsers to a default location that should be accessible by the final image
-# if the cache directory is copied correctly.
-RUN playwright install chromium --with-deps
+# Skip Playwright browser installation - we'll use system chromium
+# RUN playwright install chromium --with-deps
 
 # Build Node.js service
 WORKDIR /code/node-scraper
@@ -80,11 +78,11 @@ COPY --from=builder /code /code
 # Create non-root user for security (before setting USER)
 RUN useradd --create-home --shell /bin/bash jobagent
 
-# Copy Playwright browser cache from builder stage to the jobagent user's home
-COPY --from=builder /root/.cache/ms-playwright/ /home/jobagent/.cache/ms-playwright/
+# Skip copying Playwright cache since we're using system chromium
+# COPY --from=builder /root/.cache/ms-playwright/ /home/jobagent/.cache/ms-playwright/
 
 # Make entrypoint executable and fix ownership
-RUN chown -R jobagent:jobagent /code /home/jobagent/.cache/ms-playwright/ && chmod +x /code/entrypoint.sh /code/release-tasks.sh
+RUN chown -R jobagent:jobagent /code && chmod +x /code/entrypoint.sh /code/release-tasks.sh
 
 USER jobagent
 

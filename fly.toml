@@ -55,8 +55,9 @@ primary_region = "sea"  # Change to your preferred region (sea, ord, fra, etc.)
   BROWSER_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   HEALTH_CHECK_INTERVAL = "30000"
   
-  # Playwright configuration
-  PLAYWRIGHT_BROWSERS_PATH = "/home/jobagent/.cache/ms-playwright"
+  # Playwright configuration - use system chromium
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
+  PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/usr/bin/chromium"
   
   # Note: NODE_REDIS_URL, REDIS_URL, and other secrets are set via flyctl secrets
 

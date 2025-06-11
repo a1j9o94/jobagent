@@ -52,14 +52,35 @@ async def health_check_endpoint():  # Renamed to avoid conflict with imported he
     except Exception as e:
         queue_stats = {"error": str(e)}
 
+    # Get node service heartbeat status
+    node_service_healthy = False
+    try:
+        from app.queue_manager import queue_manager
+        last_heartbeat = await queue_manager.get_last_heartbeat('node-scraper')
+        if last_heartbeat:
+            # Consider service healthy if heartbeat within last minute
+            heartbeat_age = datetime.now(UTC) - datetime.fromisoformat(last_heartbeat['timestamp'])
+            node_service_healthy = heartbeat_age.total_seconds() < 60
+    except Exception:
+        pass
+
+    # Get queue health
+    queues_healthy = False
+    try:
+        queues_healthy = queue_manager.health_check()
+    except Exception:
+        pass
+
     health_status = {
-        "status": "ok",
+        "status": "ok", 
         "timestamp": datetime.now(UTC).isoformat(),
         "services": {
             "database": db_health_check(),
             "redis": redis_health_check(),
             "object_storage": is_storage_healthy,
             "notifications": notification_health_check(),
+            "queues": queues_healthy,
+            "node_service": node_service_healthy
         },
         "queue_stats": queue_stats,
     }
