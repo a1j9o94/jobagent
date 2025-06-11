@@ -74,18 +74,17 @@ FROM base AS final
 COPY --from=builder /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
-# Copy Playwright browser cache from builder stage
-# The path /root/.cache/ms-playwright/ is the default for Playwright
-COPY --from=builder /root/.cache/ms-playwright/ /root/.cache/ms-playwright/
-
 # Copy application code from builder stage
 COPY --from=builder /code /code
 
 # Create non-root user for security (before setting USER)
 RUN useradd --create-home --shell /bin/bash jobagent
 
+# Copy Playwright browser cache from builder stage to the jobagent user's home
+COPY --from=builder /root/.cache/ms-playwright/ /home/jobagent/.cache/ms-playwright/
+
 # Make entrypoint executable and fix ownership
-RUN chown -R jobagent:jobagent /code /root/.cache/ms-playwright/ && chmod +x /code/entrypoint.sh /code/release-tasks.sh
+RUN chown -R jobagent:jobagent /code /home/jobagent/.cache/ms-playwright/ && chmod +x /code/entrypoint.sh /code/release-tasks.sh
 
 USER jobagent
 
