@@ -18,6 +18,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenjp2-7-dev \
     libssl-dev \
     zlib1g-dev \
+    # Node.js for the scraper service
+    nodejs \
+    npm \
+    # Browser dependencies for Stagehand
+    chromium \
+    chromium-sandbox \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for faster dependency management
@@ -39,6 +45,9 @@ COPY pyproject.toml entrypoint.sh alembic.ini release-tasks.sh ./
 COPY app/ ./app/
 COPY alembic/ ./alembic/
 
+# Copy Node.js service files
+COPY node-scraper/ ./node-scraper/
+
 # Using --system to install to system Python, common for Docker images
 # Using --no-cache as good practice for builders, though uv handles caching differently than pip
 # Install both main and dev dependencies for testing capabilities
@@ -48,6 +57,15 @@ RUN uv pip install --system --no-cache-dir ".[dev]"
 # This command installs browsers to a default location that should be accessible by the final image
 # if the cache directory is copied correctly.
 RUN playwright install chromium --with-deps
+
+# Build Node.js service
+WORKDIR /code/node-scraper
+RUN npm ci  # Install all dependencies including dev (TypeScript) for building
+RUN npm run build
+RUN npm prune --omit=dev  # Remove dev dependencies after building
+
+# Return to main working directory
+WORKDIR /code
 
 # Final stage
 FROM base AS final

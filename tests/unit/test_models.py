@@ -31,10 +31,15 @@ class TestApplicationModel:
         # Verify defaults before saving
         assert application.status == ApplicationStatus.DRAFT
         assert application.custom_answers == {}
+        assert application.approval_context == {}  # New field
         assert application.resume_s3_url is None
         assert application.cover_letter_s3_url is None
         assert application.submitted_at is None
         assert application.celery_task_id is None
+        assert application.queue_task_id is None  # New field
+        assert application.screenshot_url is None  # New field
+        assert application.error_message is None  # New field
+        assert application.notes is None  # New field
         
         session.add(application)
         session.commit()
@@ -100,6 +105,55 @@ class TestApplicationModel:
         assert sample_application.custom_answers == custom_data
         assert sample_application.custom_answers["willing_to_relocate"] is True
         assert sample_application.custom_answers["salary_expectation"] == 150000
+
+    def test_application_queue_fields(self, session, sample_application):
+        """Test the new queue-related fields."""
+        # Test queue_task_id
+        sample_application.queue_task_id = "job_application_1234_abc123"
+        session.commit()
+        session.refresh(sample_application)
+        assert sample_application.queue_task_id == "job_application_1234_abc123"
+
+        # Test screenshot_url
+        sample_application.screenshot_url = "https://example.com/screenshot.png"
+        session.commit()
+        session.refresh(sample_application)
+        assert sample_application.screenshot_url == "https://example.com/screenshot.png"
+
+        # Test error_message
+        sample_application.error_message = "Failed to submit application due to network timeout"
+        session.commit()
+        session.refresh(sample_application)
+        assert sample_application.error_message == "Failed to submit application due to network timeout"
+
+        # Test notes
+        sample_application.notes = "Application submitted successfully to ATS system"
+        session.commit()
+        session.refresh(sample_application)
+        assert sample_application.notes == "Application submitted successfully to ATS system"
+
+    def test_application_approval_context(self, session, sample_application):
+        """Test approval_context JSON field functionality."""
+        approval_data = {
+            "question": "What is your salary expectation?",
+            "current_state": '{"page": "salary_form", "step": 2}',
+            "screenshot_url": "https://example.com/approval_screenshot.png",
+            "context": {
+                "page_title": "Salary Information Form",
+                "page_url": "https://company.com/apply/step2",
+                "form_fields": ["salary_expectation", "start_date"]
+            },
+            "requested_at": "2024-01-01T12:00:00Z"
+        }
+        
+        sample_application.approval_context = approval_data
+        session.commit()
+        session.refresh(sample_application)
+        
+        assert sample_application.approval_context == approval_data
+        assert sample_application.approval_context["question"] == "What is your salary expectation?"
+        assert sample_application.approval_context["context"]["page_title"] == "Salary Information Form"
+        assert len(sample_application.approval_context["context"]["form_fields"]) == 2
 
 
 class TestRoleModel:

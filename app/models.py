@@ -135,12 +135,19 @@ class Application(SQLModel, table=True):
     role_id: int = Field(foreign_key="role.id")
     profile_id: int = Field(foreign_key="profile.id")
     celery_task_id: Optional[str] = Field(default=None, index=True)
+    queue_task_id: Optional[str] = Field(default=None, index=True)
     status: ApplicationStatus = ApplicationStatus.DRAFT
     resume_s3_url: Optional[str] = None
     cover_letter_s3_url: Optional[str] = None
     custom_answers: Optional[Dict[str, Any]] = Field(
         default_factory=dict, sa_column=Column(sa.JSON)
     )
+    approval_context: Optional[Dict[str, Any]] = Field(
+        default_factory=dict, sa_column=Column(sa.JSON)
+    )
+    screenshot_url: Optional[str] = None
+    error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text))
     submitted_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utc_now)
 

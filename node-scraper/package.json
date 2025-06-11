@@ -1,0 +1,41 @@
+{
+  "name": "jobagent-node-scraper",
+  "version": "1.0.0",
+  "description": "TypeScript service for intelligent job application automation using Stagehand",
+  "main": "dist/queue-consumer.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node-dev --respawn --transpile-only src/queue-consumer.ts",
+    "start": "node dist/queue-consumer.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@browserbasehq/stagehand": "^1.0.0",
+    "redis": "^4.6.0",
+    "dotenv": "^16.0.0",
+    "winston": "^3.8.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0",
+    "ts-node-dev": "^2.0.0",
+    "@types/redis": "^4.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "vitest": "^1.0.0",
+    "@vitest/ui": "^1.0.0",
+    "jsdom": "^23.0.0",
+    "redis-memory-server": "^0.9.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+} 

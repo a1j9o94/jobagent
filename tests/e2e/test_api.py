@@ -327,6 +327,147 @@ class TestRoleRanking:
         assert response.status_code == 404
 
 
+class TestJobApplicationEndpoint:
+    """Test the new queue-based job application endpoint."""
+
+    @patch("app.tasks.submission.task_submit_application_queue.delay")
+    def test_trigger_job_application_success(
+        self, mock_task_delay, client: TestClient, sample_role: Role, sample_profile: Profile, session
+    ):
+        """Test triggering job application using queue-based system."""
+        mock_task = Mock()
+        mock_task.id = "test_queue_task_id"
+        mock_task_delay.return_value = mock_task
+
+        response = client.post(
+            f"/jobs/apply/{sample_role.id}?profile_id={sample_profile.id}",
+            headers={"X-API-Key": "test-api-key"},
+        )
+
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["status"] == "queued"
+        assert response_data["task_id"] == "test_queue_task_id"
+        assert response_data["role_id"] == sample_role.id
+        assert "application_id" in response_data
+
+        # Verify an Application was created
+        application_id = response_data["application_id"]
+        application = session.get(Application, application_id)
+        assert application is not None
+        assert application.role_id == sample_role.id
+        assert application.profile_id == sample_profile.id
+        assert application.status == ApplicationStatus.DRAFT
+
+        # Verify task was called with the application ID
+        mock_task_delay.assert_called_once_with(application_id)
+
+    @patch("app.tasks.submission.task_submit_application_queue.delay")
+    def test_trigger_job_application_uses_existing_application(
+        self, mock_task_delay, client: TestClient, sample_application: Application, session
+    ):
+        """Test that the endpoint reuses existing applications."""
+        mock_task = Mock()
+        mock_task.id = "test_reuse_task_id"
+        mock_task_delay.return_value = mock_task
+
+        response = client.post(
+            f"/jobs/apply/{sample_application.role_id}?profile_id={sample_application.profile_id}",
+            headers={"X-API-Key": "test-api-key"},
+        )
+
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["application_id"] == sample_application.id
+
+        # Should still call the task with the existing application
+        mock_task_delay.assert_called_once_with(sample_application.id)
+
+    def test_trigger_job_application_not_found(self, client: TestClient):
+        """Test job application for non-existent role."""
+        response = client.post(
+            "/jobs/apply/99999", headers={"X-API-Key": "test-api-key"}
+        )
+        assert response.status_code == 404
+
+
+class TestHealthEndpoints:
+    """Test the new health check endpoints for queue monitoring."""
+
+    def test_health_check_with_queues(self, client: TestClient):
+        """Test that health check works and includes queue stats (even if empty in test)."""
+        response = client.get("/health")
+        # Accept either 200 (all healthy) or 206 (degraded due to test environment)
+        assert response.status_code in [200, 206]
+        data = response.json()
+        
+        assert data["status"] in ["ok", "degraded"]
+        assert "queue_stats" in data
+        # Queue stats should be present (even if empty/errored in test environment)
+        assert isinstance(data["queue_stats"], dict)
+
+    @patch("app.queue_manager.queue_manager.health_check")
+    @patch("app.queue_manager.queue_manager.get_queue_stats")
+    def test_queue_health_endpoint(
+        self, mock_get_stats, mock_health_check, client: TestClient
+    ):
+        """Test dedicated queue health endpoint."""
+        mock_health_check.return_value = True
+        mock_get_stats.return_value = {
+            "job_application": 5,
+            "update_job_status": 2,
+            "approval_request": 1,
+            "send_notification": 0
+        }
+
+        response = client.get("/health/queues")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["queue_statistics"]["job_application"] == 5
+        assert data["details"]["total_pending_tasks"] == 8
+
+    @patch("app.queue_manager.queue_manager.get_queue_stats")
+    def test_node_service_health_check(self, mock_get_stats, client: TestClient):
+        """Test Node.js service health monitoring."""
+        # Test healthy scenario (low queue length)
+        mock_get_stats.return_value = {"job_application": 3}
+
+        response = client.get("/health/node-service")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["details"]["job_application_queue_length"] == 3
+
+    @patch("app.queue_manager.queue_manager.get_queue_stats")
+    def test_node_service_health_degraded(self, mock_get_stats, client: TestClient):
+        """Test Node.js service health when degraded."""
+        # Test degraded scenario (high queue length)
+        mock_get_stats.return_value = {"job_application": 15}
+
+        response = client.get("/health/node-service")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["status"] == "degraded"
+        assert "warning" in data["details"]
+
+    @patch("app.queue_manager.queue_manager.get_queue_stats")
+    def test_node_service_health_unhealthy(self, mock_get_stats, client: TestClient):
+        """Test Node.js service health when unhealthy."""
+        # Test unhealthy scenario (very high queue length)
+        mock_get_stats.return_value = {"job_application": 60}
+
+        response = client.get("/health/node-service")
+        assert response.status_code == 503
+        
+        data = response.json()
+        assert data["status"] == "unhealthy"
+        assert "error" in data["details"]
+
+
 class TestSMSWebhook:
     # Common data for SMS webhook tests
     webhook_data_help = {

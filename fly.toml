@@ -24,6 +24,7 @@ primary_region = "sea"  # Change to your preferred region (sea, ord, fra, etc.)
   app = "./entrypoint.sh uvicorn app.api_server:app --host 0.0.0.0 --port 8000"
   worker = "./entrypoint.sh celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2"
   beat = "./entrypoint.sh celery -A app.tasks.celery_app beat --loglevel=info"
+  node-scraper = "cd node-scraper && node dist/queue-consumer.js"
 
 [[vm]]
   size = "shared-cpu-2x"
@@ -31,7 +32,7 @@ primary_region = "sea"  # Change to your preferred region (sea, ord, fra, etc.)
 
 [[vm]]
   size = "shared-cpu-2x"
-  processes = ["worker", "beat"]
+  processes = ["worker", "beat", "node-scraper"]
 
 [env]
   PORT = "8000"
@@ -40,6 +41,21 @@ primary_region = "sea"  # Change to your preferred region (sea, ord, fra, etc.)
   API_BASE_URL = "https://jobagent.fly.dev"
   S3_ENDPOINT_URL = "https://fly.storage.tigris.dev"
   S3_BUCKET_NAME = "jobagent-storage"
+  
+  # Node.js Service Configuration
+  NODE_ENV = "production"
+  STAGEHAND_HEADLESS = "true"
+  STAGEHAND_TIMEOUT = "30000"
+  LOG_LEVEL = "info"
+  MAX_RETRIES = "3"
+  BROWSER_VIEWPORT_WIDTH = "1280"
+  BROWSER_VIEWPORT_HEIGHT = "720"
+  
+  # Browser automation configuration
+  BROWSER_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  HEALTH_CHECK_INTERVAL = "30000"
+  
+  # Note: NODE_REDIS_URL, REDIS_URL, and other secrets are set via flyctl secrets
 
 [deploy]
   release_command = "./release-tasks.sh"

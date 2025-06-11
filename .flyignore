@@ -46,6 +46,23 @@ wheels/
 .installed.cfg
 *.egg
 
+# Node.js and TypeScript development files
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.eslintcache
+*.tsbuildinfo
+.nyc_output
+
+# TypeScript source files (compiled in Docker build)
+node-scraper/src/
+node-scraper/*.ts
+!node-scraper/src/**/*.js
+*.js.map
+*.d.ts.map
+
 # Testing
 .pytest_cache/
 .coverage
@@ -53,6 +70,9 @@ htmlcov/
 .tox/
 .nox/
 tests/
+node-scraper/src/test/
+coverage/
+*.lcov
 
 # Virtual environments
 venv/
@@ -72,3 +92,4 @@ Thumbs.db
 *.temp
 
 # Note: alembic/ and alembic.ini are NOT excluded - they're needed for migrations 
+# Note: node-scraper/package.json, tsconfig.json, and dist/ are NOT excluded - needed for runtime 

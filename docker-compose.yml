@@ -72,6 +72,33 @@ services:
     volumes:
       - ./app:/code/app # Mount app code for consistency
 
+  node-scraper:
+    build: 
+      context: ./node-scraper
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=development
+      - NODE_REDIS_URL=redis://redis:6379/0
+      - STAGEHAND_HEADLESS=true
+      - STAGEHAND_TIMEOUT=30000
+      - LOG_LEVEL=info
+      - MAX_RETRIES=3
+      - BROWSER_VIEWPORT_WIDTH=1280
+      - BROWSER_VIEWPORT_HEIGHT=720
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./node-scraper/src:/app/src # For development hot reload
+      - ./node-scraper/dist:/app/dist
+    command: ["npm", "run", "dev"]  # TypeScript watch mode for development
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('./dist/queue-consumer').JobApplicationService().healthCheck().then(() => process.exit(0)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   db:
     image: postgres:16-alpine
     env_file:

@@ -21,6 +21,24 @@ __pycache__/
 venv/
 env/
 
+# Node.js dependencies and caches (Docker will npm ci to install fresh)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn
+.eslintcache
+*.tsbuildinfo
+.nyc_output
+.cache/
+.parcel-cache/
+
+# Node.js build outputs (Docker will build fresh)
+node-scraper/dist/
+*.js.map
+*.d.ts.map
+
 # IDE and editor specific files
 .vscode/
 .idea/
@@ -35,12 +53,15 @@ Thumbs.db
 htmlcov/
 .coverage
 .pytest_cache/
+coverage/
+*.lcov
+node-scraper/src/test/
 
 # Secrets and local configurations
 .env
 *.env
 .env.*
-!env.sample # but do include env.sample if you have one and want it in image context (usually not needed)
+!env.sample
 
 # Build artifacts
 build/
@@ -51,17 +72,16 @@ dist/
 *.log
 logs/
 
-# Node.js specific (if ever used for frontend parts)
-node_modules/
-npm-debug.log
-yarn-error.log
-
-# alembic/versions will be populated by alembic, not part of source usually copied
-# alembic/versions/
-
-# Entrypoint script if it's only for dev or specific compose setups
-# entrypoint.sh # Keep if it IS part of the build context needed for final image
-
 # README and design docs (unless needed in image)
 README.md
-design_doc.md 
+design_doc.md
+
+# Development and testing files
+tests/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Note: package.json, package-lock.json, tsconfig.json are NOT excluded - needed for build
+# Note: TypeScript source files in node-scraper/src/ are NOT excluded - needed for compilation 

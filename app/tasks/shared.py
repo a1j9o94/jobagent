@@ -12,7 +12,10 @@ BROKER_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 RESULT_BACKEND = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 celery_app = Celery(
-    "jobagent", broker=BROKER_URL, backend=RESULT_BACKEND, include=["app.tasks"]
+    "jobagent", 
+    broker=BROKER_URL, 
+    backend=RESULT_BACKEND, 
+    include=["app.tasks", "app.tasks.submission", "app.tasks.queue_consumer"]
 )
 
 celery_app.conf.update(
@@ -38,6 +41,18 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.task_process_new_roles",
         "schedule": crontab(minute="*/30"),  # Every 30 minutes
         "args": (1,),  # Assuming profile_id=1 for the scheduled task
+    },
+    "queue-consumer-runner": {
+        "task": "app.tasks.queue_consumer.task_queue_consumer_runner",
+        "schedule": crontab(minute="*"),  # Every minute
+    },
+    "consume-status-updates": {
+        "task": "app.tasks.queue_consumer.task_consume_status_updates",
+        "schedule": crontab(minute="*/2"),  # Every 2 minutes
+    },
+    "consume-approval-requests": {
+        "task": "app.tasks.queue_consumer.task_consume_approval_requests",
+        "schedule": crontab(minute="*/2"),  # Every 2 minutes
     },
 }
 

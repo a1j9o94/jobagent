@@ -210,9 +210,28 @@ if [ -n "${WA_TO:-}" ] && [ "${WA_TO}" != "whatsapp:+1234567890" ]; then
     SECRETS_TO_SET+=("WA_TO=${WA_TO}")
 fi
 
-# Add Redis URL
+# Add Firecrawl API key if provided
+if [ -n "${FIRECRAWL_API_KEY:-}" ] && [ "${FIRECRAWL_API_KEY}" != "fc-1234567890" ]; then
+    SECRETS_TO_SET+=("FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}")
+fi
+
+# Add Node.js browser automation overrides if provided
+if [ -n "${STAGEHAND_TIMEOUT:-}" ]; then
+    SECRETS_TO_SET+=("STAGEHAND_TIMEOUT=${STAGEHAND_TIMEOUT}")
+fi
+
+if [ -n "${BROWSER_VIEWPORT_WIDTH:-}" ]; then
+    SECRETS_TO_SET+=("BROWSER_VIEWPORT_WIDTH=${BROWSER_VIEWPORT_WIDTH}")
+fi
+
+if [ -n "${BROWSER_VIEWPORT_HEIGHT:-}" ]; then
+    SECRETS_TO_SET+=("BROWSER_VIEWPORT_HEIGHT=${BROWSER_VIEWPORT_HEIGHT}")
+fi
+
+# Add Redis URL for both Python and Node.js services
 if [ -n "${REDIS_URL}" ]; then
     SECRETS_TO_SET+=("REDIS_URL=${REDIS_URL}")
+    SECRETS_TO_SET+=("NODE_REDIS_URL=${REDIS_URL}")  # Node.js service uses this
 fi
 
 # Add Tigris/S3 credentials if we have them
@@ -288,6 +307,7 @@ echo "  • Database: ${DB_NAME}"
 echo "  • Redis: ${REDIS_NAME}"
 echo "  • Storage: ${BUCKET_NAME}"
 echo "  • URL: ${APP_URL}"
+echo "  • Services: Python API + Node.js Queue Consumer"
 
 echo ""
 print_status "🔑 API Key Information:"
@@ -313,8 +333,9 @@ echo ""
 print_status "📝 Next Steps:"
 echo "  1. Check application logs: flyctl logs --app ${APP_NAME}"
 echo "  2. Test the API endpoints at: ${APP_URL}"
-echo "  3. Configure additional secrets if needed"
-echo "  4. Set up monitoring and alerts"
+echo "  3. Test the queue-based job application flow at: ${APP_URL}/jobs/apply/{role_id}"
+echo "  4. Configure additional secrets if needed"
+echo "  5. Set up monitoring and alerts"
 
 if [ -z "${OPENAI_API_KEY:-}" ] || [ "${OPENAI_API_KEY}" = "your-openai-key" ]; then
     print_warning "⚠️  Remember to set your OPENAI_API_KEY:"

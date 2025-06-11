@@ -6,7 +6,7 @@ import logging
 from firecrawl import AsyncFirecrawlApp
 
 from app.db import get_session
-from app.models import Role, Profile, Company
+from app.models import Role, Profile, Company, ApplicationStatus
 from .shared import app, get_api_key
 from app.tools import process_ingested_role
 from app.tools.company import get_or_create_company
@@ -106,4 +106,60 @@ async def trigger_role_ranking(
 
     task = task_rank_role.delay(role_id, profile_id)
 
-    return {"status": "queued", "task_id": task.id, "role_id": role_id} 
+    return {"status": "queued", "task_id": task.id, "role_id": role_id}
+
+
+@app.post(
+    "/jobs/apply/{role_id}",
+    summary="Apply for a specific role using the new queue-based system",
+    dependencies=[Depends(get_api_key)],
+    tags=["Job Processing"],
+)
+async def trigger_job_application(
+    role_id: int,
+    profile_id: int = 1,  # Default to profile 1 for now
+    session: Session = Depends(get_session),
+):
+    """Trigger application for a specific role using the new queue-based Node.js service."""
+    # Verify role exists
+    role = session.get(Role, role_id)
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Role not found"
+        )
+
+    # Check if an application already exists
+    from app.models import Application
+    existing_app = session.exec(
+        select(Application).where(
+            Application.role_id == role_id,
+            Application.profile_id == profile_id
+        )
+    ).first()
+
+    if existing_app:
+        # Use existing application
+        application = existing_app
+    else:
+        # Create new application using model_validate to handle default_factory fields
+        application_data = {
+            "role_id": role_id,
+            "profile_id": profile_id,
+            "status": ApplicationStatus.DRAFT
+        }
+        application = Application.model_validate(application_data)
+        session.add(application)
+        session.commit()
+        session.refresh(application)
+
+    # Enqueue application task using new queue-based system
+    from app.tasks.submission import task_submit_application_queue
+
+    task = task_submit_application_queue.delay(application.id)
+
+    return {
+        "status": "queued", 
+        "task_id": task.id, 
+        "application_id": application.id,
+        "role_id": role_id
+    } 

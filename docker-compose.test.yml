@@ -73,7 +73,7 @@ services:
         alembic current &&
         echo '--- Running Alembic upgrade head ---' &&
         alembic upgrade head &&
-        echo '--- Starting Pytest ---' &&
+        echo '--- Starting Python Tests ---' &&
         pytest -v --tb=short tests/
       "
     volumes:
@@ -83,6 +83,35 @@ services:
       - ./alembic:/code/alembic:ro # Mount alembic directory
     # Coverage reports or other test artifacts can be mounted out if needed:
     # - ./coverage_reports:/code/coverage_reports
+
+  node-tests:
+    build: 
+      context: ./node-scraper
+      dockerfile: Dockerfile
+      target: builder # Use builder stage to have dev dependencies
+    environment:
+      - NODE_ENV=test
+      - NODE_REDIS_URL=redis://test_redis:6379/0
+      - STAGEHAND_HEADLESS=true
+      - STAGEHAND_TIMEOUT=5000
+      - LOG_LEVEL=error
+      - MAX_RETRIES=1
+    depends_on:
+      test_redis:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo '--- Node.js dependencies already installed in builder stage ---' &&
+        echo '--- Building TypeScript ---' &&
+        npm run build &&
+        echo '--- Running Node.js Tests ---' &&
+        npm run test:run
+      "
+    volumes:
+      - ./node-scraper/src:/app/src:ro
+      - ./node-scraper/package.json:/app/package.json:ro
+      - ./node-scraper/tsconfig.json:/app/tsconfig.json:ro
+      - ./node-scraper/vitest.config.ts:/app/vitest.config.ts:ro
 
 # Note: This test compose file does not include a MinIO instance for tests.
 # If your tests require a live S3-compatible store, you would add a `test_minio` service similar to the main compose file.
