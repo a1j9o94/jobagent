@@ -428,10 +428,15 @@ class TestHealthEndpoints:
         assert data["queue_statistics"]["job_application"] == 5
         assert data["details"]["total_pending_tasks"] == 8
 
+    @patch("app.queue_manager.queue_manager.get_last_heartbeat")
     @patch("app.queue_manager.queue_manager.get_queue_stats")
-    def test_node_service_health_check(self, mock_get_stats, client: TestClient):
-        """Test Node.js service health monitoring."""
-        # Test healthy scenario (low queue length)
+    def test_node_service_health_check(self, mock_get_stats, mock_get_heartbeat, client: TestClient):
+        """Test Node.js service health monitoring via heartbeat."""
+        from datetime import datetime, timezone
+        
+        # Test healthy scenario (recent heartbeat)
+        recent_heartbeat = datetime.now(timezone.utc)
+        mock_get_heartbeat.return_value = recent_heartbeat
         mock_get_stats.return_value = {"job_application": 3}
 
         response = client.get("/health/node-service")
@@ -439,25 +444,33 @@ class TestHealthEndpoints:
         
         data = response.json()
         assert data["status"] == "healthy"
-        assert data["details"]["job_application_queue_length"] == 3
+        assert data["details"]["last_heartbeat"] is not None
+        assert data["details"]["seconds_since_heartbeat"] < 60
 
+    @patch("app.queue_manager.queue_manager.get_last_heartbeat")
     @patch("app.queue_manager.queue_manager.get_queue_stats")
-    def test_node_service_health_degraded(self, mock_get_stats, client: TestClient):
-        """Test Node.js service health when degraded."""
-        # Test degraded scenario (high queue length)
+    def test_node_service_health_degraded(self, mock_get_stats, mock_get_heartbeat, client: TestClient):
+        """Test Node.js service health when degraded (old heartbeat)."""
+        from datetime import datetime, timezone, timedelta
+        
+        # Test degraded scenario (old heartbeat)
+        old_heartbeat = datetime.now(timezone.utc) - timedelta(seconds=90)
+        mock_get_heartbeat.return_value = old_heartbeat
         mock_get_stats.return_value = {"job_application": 15}
 
         response = client.get("/health/node-service")
-        assert response.status_code == 200
+        assert response.status_code == 503
         
         data = response.json()
-        assert data["status"] == "degraded"
-        assert "warning" in data["details"]
+        assert data["status"] == "unhealthy"
+        assert "not responding" in data["details"]["status"]
 
+    @patch("app.queue_manager.queue_manager.get_last_heartbeat")
     @patch("app.queue_manager.queue_manager.get_queue_stats")
-    def test_node_service_health_unhealthy(self, mock_get_stats, client: TestClient):
-        """Test Node.js service health when unhealthy."""
-        # Test unhealthy scenario (very high queue length)
+    def test_node_service_health_unhealthy(self, mock_get_stats, mock_get_heartbeat, client: TestClient):
+        """Test Node.js service health when unhealthy (no heartbeat)."""
+        # Test unhealthy scenario (no heartbeat)
+        mock_get_heartbeat.return_value = None
         mock_get_stats.return_value = {"job_application": 60}
 
         response = client.get("/health/node-service")
@@ -465,7 +478,7 @@ class TestHealthEndpoints:
         
         data = response.json()
         assert data["status"] == "unhealthy"
-        assert "error" in data["details"]
+        assert "no heartbeat received" in data["details"]["status"]
 
 
 class TestSMSWebhook:

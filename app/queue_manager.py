@@ -173,8 +173,33 @@ class QueueManager:
         """Get statistics for all queues."""
         stats = {}
         for task_type in TaskType:
-            stats[task_type.value] = self.get_queue_length(task_type)
+            queue_name = f"tasks:{task_type.value}"
+            try:
+                stats[task_type.value] = self.redis_client.llen(queue_name)
+            except Exception as e:
+                logger.error(f"Error getting stats for {task_type.value}: {e}")
+                stats[task_type.value] = 0
         return stats
+
+    def get_last_heartbeat(self, service_name: str) -> Optional[datetime]:
+        """Get the timestamp of the last heartbeat from a service."""
+        try:
+            heartbeat_key = f"heartbeat:{service_name}"
+            heartbeat_data = self.redis_client.get(heartbeat_key)
+            
+            if heartbeat_data:
+                data = json.loads(heartbeat_data)
+                # Parse ISO format timestamp and convert to UTC datetime
+                timestamp_str = data.get('timestamp', '')
+                if timestamp_str:
+                    # Handle both Z suffix and +00:00 suffix
+                    if timestamp_str.endswith('Z'):
+                        timestamp_str = timestamp_str[:-1] + '+00:00'
+                    return datetime.fromisoformat(timestamp_str)
+            return None
+        except Exception as e:
+            logger.error(f"Error getting heartbeat for {service_name}: {e}")
+            return None
 
     def health_check(self) -> bool:
         """Check if Redis connection is healthy."""

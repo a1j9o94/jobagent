@@ -5,7 +5,7 @@
   "main": "dist/queue-consumer.js",
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node-dev --respawn --transpile-only src/queue-consumer.ts",
+    "dev": "tsc --respawn --transpile-only src/queue-consumer.ts",
     "start": "node dist/queue-consumer.js",
     "test": "vitest",
     "test:run": "vitest run",

@@ -133,45 +133,49 @@ async def queue_health_endpoint():
 
 @app.get("/health/node-service", summary="Node.js Service Health Check", tags=["System"])
 async def node_service_health_endpoint():
-    """Check the health of the Node.js automation service by monitoring queue lengths."""
+    """Check the health of the Node.js automation service via heartbeat messages."""
     try:
         from app.queue_manager import queue_manager
         
-        # Get queue statistics
-        queue_stats = queue_manager.get_queue_stats()
+        # Check when we last received a heartbeat from Node.js service
+        last_heartbeat = queue_manager.get_last_heartbeat("node-scraper")
         
-        # Check job application queue specifically
-        job_queue_length = queue_stats.get("job_application", 0)
-        
-        # Determine health based on queue length thresholds
-        if job_queue_length < 10:
-            service_status = "healthy"
-            status_code = status.HTTP_200_OK
-            details = {
-                "status": "Node.js service appears healthy",
-                "job_application_queue_length": job_queue_length
-            }
-        elif job_queue_length < 50:
-            service_status = "degraded"
-            status_code = status.HTTP_200_OK
-            details = {
-                "status": "Node.js service may be experiencing delays",
-                "warning": f"Job queue has {job_queue_length} pending tasks",
-                "job_application_queue_length": job_queue_length
-            }
+        if last_heartbeat:
+            seconds_since = (datetime.now(UTC) - last_heartbeat).total_seconds()
+            
+            if seconds_since < 60:  # Healthy if heartbeat within last minute
+                service_status = "healthy"
+                status_code = status.HTTP_200_OK
+                details = {
+                    "status": "Node.js service is responding",
+                    "last_heartbeat": last_heartbeat.isoformat(),
+                    "seconds_since_heartbeat": round(seconds_since, 1)
+                }
+            else:
+                service_status = "unhealthy"
+                status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+                details = {
+                    "status": f"Node.js service not responding - no heartbeat for {round(seconds_since, 1)} seconds",
+                    "last_heartbeat": last_heartbeat.isoformat(),
+                    "seconds_since_heartbeat": round(seconds_since, 1)
+                }
         else:
             service_status = "unhealthy"
             status_code = status.HTTP_503_SERVICE_UNAVAILABLE
             details = {
-                "status": "Node.js service appears to be down or overloaded",
-                "error": f"Job queue has {job_queue_length} pending tasks",
-                "job_application_queue_length": job_queue_length
+                "status": "Node.js service not responding - no heartbeat received",
+                "last_heartbeat": None,
+                "seconds_since_heartbeat": None
             }
+        
+        # Also include queue stats for additional context
+        queue_stats = queue_manager.get_queue_stats()
         
         health_status = {
             "status": service_status,
             "timestamp": datetime.now(UTC).isoformat(),
-            "details": details
+            "details": details,
+            "queue_stats": queue_stats
         }
         
         return Response(
@@ -188,7 +192,8 @@ async def node_service_health_endpoint():
                 "error": str(e),
                 "details": {
                     "status": "Cannot determine Node.js service health",
-                    "job_application_queue_length": 0
+                    "last_heartbeat": None,
+                    "seconds_since_heartbeat": None
                 }
             }),
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

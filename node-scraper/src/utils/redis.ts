@@ -107,6 +107,23 @@ export class RedisManager {
         }
     }
 
+    async publish(channel: string, data: any): Promise<void> {
+        try {
+            // Store heartbeat data with expiration for health checks
+            if (channel.startsWith('heartbeat:')) {
+                await this.client.setEx(channel, 120, JSON.stringify(data)); // Expire after 2 minutes
+            }
+            
+            // Also publish to channel for real-time subscribers (optional)
+            await this.client.publish(channel, JSON.stringify(data));
+            
+            logger.debug(`Published to channel ${channel}`);
+        } catch (error) {
+            logger.error(`Error publishing to channel ${channel}:`, error);
+            throw error;
+        }
+    }
+
     async getQueueLength(taskType: TaskType): Promise<number> {
         try {
             const queueKey = this.getQueueKey(taskType);

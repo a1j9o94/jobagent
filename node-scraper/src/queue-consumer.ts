@@ -11,6 +11,7 @@ class JobApplicationService {
     private redis: RedisManager;
     private processor: ApplicationProcessor;
     private isShuttingDown: boolean = false;
+    private heartbeatInterval?: NodeJS.Timeout;
 
     constructor() {
         this.redis = new RedisManager();
@@ -32,6 +33,9 @@ class JobApplicationService {
             // Set up graceful shutdown
             this.setupGracefulShutdown();
 
+            // Start heartbeat publishing
+            this.startHeartbeat();
+
             // Start processing job applications
             await this.processor.startProcessing();
 
@@ -40,6 +44,26 @@ class JobApplicationService {
             await this.shutdown();
             process.exit(1);
         }
+    }
+
+    private startHeartbeat(): void {
+        logger.info('Starting heartbeat publishing...');
+        this.heartbeatInterval = setInterval(async () => {
+            try {
+                const heartbeatData = {
+                    timestamp: new Date().toISOString(),
+                    status: 'alive',
+                    uptime: process.uptime(),
+                    memory: process.memoryUsage(),
+                    service: 'node-scraper'
+                };
+
+                await this.redis.publish('heartbeat:node-scraper', heartbeatData);
+                logger.debug('Heartbeat published successfully');
+            } catch (error) {
+                logger.error('Failed to publish heartbeat:', error);
+            }
+        }, 30000); // Every 30 seconds
     }
 
     private setupGracefulShutdown(): void {
@@ -89,6 +113,11 @@ class JobApplicationService {
 
             // Disconnect from Redis
             await this.redis.disconnect();
+
+            // Stop heartbeat publishing
+            if (this.heartbeatInterval) {
+                clearInterval(this.heartbeatInterval);
+            }
 
             logger.info('Service shutdown complete');
         } catch (error) {
