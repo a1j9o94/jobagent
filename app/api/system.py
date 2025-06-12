@@ -18,14 +18,14 @@ async def root():
         "message": "Job Agent API is running",
         "routes": [
             {
-                "path": "/ingest/profile",
+                "path": "/profile",
                 "method": "POST",
-                "description": "Ingest a user's full profile",
+                "description": "Create a new profile",
             }
         ],
         "example": {
             "method": "POST",
-            "url": f"{API_BASE_URL}/ingest/profile",
+            "url": f"{API_BASE_URL}/profile",
             "headers": {"X-API-Key": "your-api-key"},
             "body": {
                 "headline": "Software Engineer",

@@ -34,18 +34,10 @@ def send_documents_ready_notification(application: Application, resume_url: str,
             f"Documents saved and ready for submission!"
         )
         
-        # Get user's phone number from profile preferences
-        phone_number = None
-        for pref in application.profile.preferences:
-            if pref.key == "phone":
-                phone_number = pref.value
-                break
-
-        if phone_number:
-            send_sms_message(message, phone_number)
-            logger.info(f"Sent documents ready notification for application {application.id}")
-        else:
-            logger.warning(f"No phone number found for profile {application.profile.id}")
+        # Send to default SMS_TO number from environment variables
+        # This matches the pattern used in webhooks.py for notifications
+        send_sms_message(message)
+        logger.info(f"Sent documents ready notification for application {application.id}")
 
     except Exception as e:
         logger.error(f"Error sending documents ready notification: {e}")

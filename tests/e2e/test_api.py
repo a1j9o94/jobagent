@@ -34,14 +34,14 @@ class TestRootEndpoint:
         assert data["message"] == "Job Agent API is running"
         assert data["routes"] == [
             {
-                "path": "/ingest/profile",
+                "path": "/profile",
                 "method": "POST",
-                "description": "Ingest a user's full profile",
+                "description": "Create a new profile",
             }
         ]
         assert data["example"] == {
             "method": "POST",
-            "url": f"{API_BASE_URL}/ingest/profile",
+            "url": f"{API_BASE_URL}/profile",
             "headers": {"X-API-Key": "your-api-key"},
             "body": {
                 "headline": "Software Engineer",
@@ -99,97 +99,390 @@ class TestHealthEndpoint:
             assert data["services"]["redis"] is False
 
 
-class TestProfileIngestion:
-    def test_ingest_profile_success_new(
-        self, client: TestClient, session
-    ):  # Added session to clear data
-        """Test successful profile ingestion for a new profile."""
-        # Ensure no profile exists initially for this specific test
+
+
+
+class TestProfileCRUD:
+    def test_get_profile_success(self, client: TestClient, sample_profile: Profile, session):
+        """Test getting profile details via GET with preferences."""
+        # Add some test preferences
+        prefs_data = [
+            {"profile_id": sample_profile.id, "key": "email", "value": "test@example.com"},
+            {"profile_id": sample_profile.id, "key": "phone", "value": "+1234567890"},
+        ]
+        prefs = []
+        for pref_data in prefs_data:
+            pref = UserPreference.model_validate(pref_data)
+            prefs.append(pref)
+            session.add(pref)
+        session.commit()
+
+        response = client.get(f"/profile/{sample_profile.id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == sample_profile.id
+        assert data["headline"] == sample_profile.headline
+        assert data["summary"] == sample_profile.summary
+        assert "created_at" in data
+        assert "updated_at" in data
+        
+        # Check preferences are included
+        assert "preferences" in data
+        assert "preferences_dict" in data
+        assert len(data["preferences"]) == 2
+        assert data["preferences_dict"]["email"] == "test@example.com"
+        assert data["preferences_dict"]["phone"] == "+1234567890"
+
+    def test_get_profile_html_success(self, client: TestClient, sample_profile: Profile, session):
+        """Test getting profile details as HTML template with preferences."""
+        # Add a test preference
+        pref_data = {"profile_id": sample_profile.id, "key": "location", "value": "San Francisco"}
+        pref = UserPreference.model_validate(pref_data)
+        session.add(pref)
+        session.commit()
+
+        response = client.get(
+            f"/profile/{sample_profile.id}",
+            headers={"Accept": "text/html"}
+        )
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        # Should contain profile information
+        assert sample_profile.headline in response.text
+        assert sample_profile.summary in response.text
+        # Should contain preferences
+        assert "location" in response.text
+        assert "San Francisco" in response.text
+        assert "Preferences" in response.text
+
+    def test_get_profile_not_found(self, client: TestClient):
+        """Test getting non-existent profile."""
+        response = client.get("/profile/99999")
+        assert response.status_code == 404
+
+    def test_create_profile_explicit(self, client: TestClient, session):
+        """Test creating a new profile with explicit POST to /profile."""
+        # Clear existing profiles
         profiles = session.exec(select(Profile)).all()
         for p in profiles:
             session.delete(p)
         session.commit()
 
         profile_data = {
-            "headline": "Senior Software Engineer | Python & Cloud",
-            "summary": "Experienced engineer specializing in building scalable backend systems.",
-            "preferences": {
-                "first_name": "John",
-                "last_name": "Doe",
-                "email": "john.doe@example.com",
-            },
+            "headline": "Explicit Profile Creation",
+            "summary": "Created via POST /profile"
         }
 
         response = client.post(
-            "/ingest/profile",
+            "/profile",
             json=profile_data,
-            headers={"X-API-Key": "test-api-key"},  # From conftest.py os.environ
+            headers={"X-API-Key": "test-api-key"}
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
-        assert data["status"] == "success"
+        assert data["status"] == "created"
         assert "profile_id" in data
-        profile_id = data["profile_id"]
-
+        
         # Verify in DB
+        profile_id = data["profile_id"]
         db_profile = session.get(Profile, profile_id)
         assert db_profile is not None
         assert db_profile.headline == profile_data["headline"]
-        pref = session.exec(
-            select(UserPreference).where(
-                UserPreference.profile_id == profile_id, UserPreference.key == "email"
-            )
-        ).first()
-        assert pref is not None
-        assert pref.value == "john.doe@example.com"
 
-    def test_ingest_profile_update_existing(
-        self, client: TestClient, sample_profile: Profile, session
-    ):
-        """Test updating an existing profile."""
+    def test_update_profile_put(self, client: TestClient, sample_profile: Profile, session):
+        """Test updating profile with PUT."""
         updated_data = {
-            "headline": "Updated Headline",
-            "summary": "Updated summary",
-            "preferences": {"email": "updated.john.doe@example.com"},
+            "headline": "Updated via PUT",
+            "summary": "This was updated using PUT method"
         }
 
-        response = client.post(
-            "/ingest/profile",  # This endpoint assumes a single profile system and updates or creates
+        response = client.put(
+            f"/profile/{sample_profile.id}",
             json=updated_data,
-            headers={"X-API-Key": "test-api-key"},
+            headers={"X-API-Key": "test-api-key"}
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "success"
-        assert data["profile_id"] == sample_profile.id  # Should update the existing one
+        assert data["status"] == "updated"
+        assert data["profile_id"] == sample_profile.id
 
-        session.refresh(sample_profile)  # Refresh from DB
-        assert sample_profile.headline == "Updated Headline"
-        updated_pref = session.exec(
+        # Verify changes in DB
+        session.refresh(sample_profile)
+        assert sample_profile.headline == "Updated via PUT"
+        assert sample_profile.summary == "This was updated using PUT method"
+
+    def test_update_profile_put_not_found(self, client: TestClient):
+        """Test updating non-existent profile."""
+        response = client.put(
+            "/profile/99999",
+            json={"headline": "Test"},
+            headers={"X-API-Key": "test-api-key"}
+        )
+        assert response.status_code == 404
+
+    def test_delete_profile_success(self, client: TestClient, session):
+        """Test deleting a profile with all associated data."""
+        from app.models import Company
+        
+        # Create a profile with associated data
+        profile_data = {
+            "headline": "Profile to Delete",
+            "summary": "This profile will be deleted"
+        }
+        profile = Profile.model_validate(profile_data)
+        session.add(profile)
+        session.commit()
+        session.refresh(profile)
+        
+        # Create associated company for roles
+        company = Company(name="TestDeleteCorp")
+        session.add(company)
+        session.commit()
+        session.refresh(company)
+        
+        # Create associated preferences
+        preferences_data = [
+            {"profile_id": profile.id, "key": "email", "value": "delete@test.com"},
+            {"profile_id": profile.id, "key": "phone", "value": "+1234567890"}
+        ]
+        for pref_data in preferences_data:
+            pref = UserPreference.model_validate(pref_data)
+            session.add(pref)
+        
+        # Create a role (not associated with profile directly)
+        role_data = {
+            "title": "Test Role to Keep",
+            "description": "Role should remain after profile deletion",
+            "posting_url": "https://example.com/delete-test",
+            "unique_hash": "test_delete_hash",
+            "company_id": company.id
+        }
+        role = Role.model_validate(role_data)
+        session.add(role)
+        session.commit()
+        session.refresh(role)
+        
+        # Create associated application (links profile to role)
+        application_data = {
+            "role_id": role.id,
+            "profile_id": profile.id,
+            "status": ApplicationStatus.DRAFT
+        }
+        application = Application.model_validate(application_data)
+        session.add(application)
+        session.commit()
+        session.refresh(application)
+        
+        # Store IDs for verification after deletion
+        profile_id = profile.id
+        role_id = role.id
+        application_id = application.id
+        preference_ids = [pref.id for pref in session.exec(
+            select(UserPreference).where(UserPreference.profile_id == profile_id)
+        ).all()]
+        
+        # Delete the profile
+        response = client.delete(
+            f"/profile/{profile_id}",
+            headers={"X-API-Key": "test-api-key"}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "deleted"
+        assert data["message"] == "Profile deleted successfully."
+        assert data["profile_id"] == profile_id
+        
+        # Verify profile is deleted
+        deleted_profile = session.get(Profile, profile_id)
+        assert deleted_profile is None
+        
+        # Verify role is NOT deleted (roles can be shared across profiles)
+        remaining_role = session.get(Role, role_id)
+        assert remaining_role is not None
+        assert remaining_role.title == "Test Role to Keep"
+        
+        # Verify associated application is deleted
+        deleted_application = session.get(Application, application_id)
+        assert deleted_application is None
+        
+        # Verify associated preferences are deleted
+        for pref_id in preference_ids:
+            deleted_preference = session.get(UserPreference, pref_id)
+            assert deleted_preference is None
+
+    def test_delete_profile_not_found(self, client: TestClient):
+        """Test deleting non-existent profile."""
+        response = client.delete(
+            "/profile/99999",
+            headers={"X-API-Key": "test-api-key"}
+        )
+        assert response.status_code == 404
+        data = response.json()
+        assert "Profile not found" in data["detail"]
+
+    def test_delete_profile_requires_api_key(self, client: TestClient, sample_profile: Profile):
+        """Test that delete profile endpoint requires API key authentication."""
+        response = client.delete(f"/profile/{sample_profile.id}")
+        assert response.status_code == 403  # Forbidden without API key
+
+
+class TestUserPreferenceCRUD:
+    def test_get_profile_preferences(self, client: TestClient, sample_profile: Profile, session):
+        """Test getting all preferences for a profile."""
+        # Create some test preferences
+        prefs_data = [
+            {"profile_id": sample_profile.id, "key": "email", "value": "test@example.com"},
+            {"profile_id": sample_profile.id, "key": "phone", "value": "+1234567890"},
+            {"profile_id": sample_profile.id, "key": "linkedin", "value": "https://linkedin.com/in/test"}
+        ]
+        for pref_data in prefs_data:
+            pref = UserPreference.model_validate(pref_data)
+            session.add(pref)
+        session.commit()
+
+        response = client.get(f"/profile/{sample_profile.id}/preferences")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "preferences" in data
+        assert len(data["preferences"]) == 3
+        
+        # Check that all our preferences are there
+        pref_keys = [p["key"] for p in data["preferences"]]
+        assert "email" in pref_keys
+        assert "phone" in pref_keys
+        assert "linkedin" in pref_keys
+
+    def test_get_specific_preference(self, client: TestClient, sample_profile: Profile, session):
+        """Test getting a specific preference by key."""
+        pref_data = {
+            "profile_id": sample_profile.id, 
+            "key": "test_key", 
+            "value": "test_value"
+        }
+        pref = UserPreference.model_validate(pref_data)
+        session.add(pref)
+        session.commit()
+
+        response = client.get(f"/profile/{sample_profile.id}/preferences/test_key")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["key"] == "test_key"
+        assert data["value"] == "test_value"
+        assert data["profile_id"] == sample_profile.id
+
+    def test_get_preference_not_found(self, client: TestClient, sample_profile: Profile):
+        """Test getting non-existent preference."""
+        response = client.get(f"/profile/{sample_profile.id}/preferences/nonexistent")
+        assert response.status_code == 404
+
+    def test_create_preference(self, client: TestClient, sample_profile: Profile, session):
+        """Test creating a new preference."""
+        pref_data = {
+            "key": "new_preference",
+            "value": "new_value"
+        }
+
+        response = client.post(
+            f"/profile/{sample_profile.id}/preferences",
+            json=pref_data,
+            headers={"X-API-Key": "test-api-key"}
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["status"] == "created"
+        assert data["key"] == "new_preference"
+
+        # Verify in DB
+        pref = session.exec(
             select(UserPreference).where(
                 UserPreference.profile_id == sample_profile.id,
-                UserPreference.key == "email",
+                UserPreference.key == "new_preference"
             )
         ).first()
-        assert updated_pref is not None
-        assert updated_pref.value == "updated.john.doe@example.com"
+        assert pref is not None
+        assert pref.value == "new_value"
 
-    def test_ingest_profile_invalid_api_key(self, client: TestClient):
-        """Test profile ingestion with invalid API key."""
-        response = client.post(
-            "/ingest/profile",
-            json={"headline": "Test"},
-            headers={"X-API-Key": "invalid-key"},
+    def test_update_preference(self, client: TestClient, sample_profile: Profile, session):
+        """Test updating an existing preference."""
+        # Create initial preference
+        pref_data = {
+            "profile_id": sample_profile.id,
+            "key": "update_test",
+            "value": "original_value"
+        }
+        pref = UserPreference.model_validate(pref_data)
+        session.add(pref)
+        session.commit()
+
+        update_data = {"value": "updated_value"}
+
+        response = client.put(
+            f"/profile/{sample_profile.id}/preferences/update_test",
+            json=update_data,
+            headers={"X-API-Key": "test-api-key"}
         )
-        assert response.status_code == 403
-        assert "Invalid API Key" in response.json()["detail"]
 
-    def test_ingest_profile_missing_api_key(self, client: TestClient):
-        """Test profile ingestion without API key."""
-        response = client.post("/ingest/profile", json={"headline": "Test"})
-        assert response.status_code == 403  # Due to APIKeyHeader auto_error=True
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "updated"
+        assert data["key"] == "update_test"
+
+        # Verify change in DB
+        session.refresh(pref)
+        assert pref.value == "updated_value"
+
+    def test_update_preference_not_found(self, client: TestClient, sample_profile: Profile):
+        """Test updating non-existent preference."""
+        response = client.put(
+            f"/profile/{sample_profile.id}/preferences/nonexistent",
+            json={"value": "test"},
+            headers={"X-API-Key": "test-api-key"}
+        )
+        assert response.status_code == 404
+
+    def test_delete_preference(self, client: TestClient, sample_profile: Profile, session):
+        """Test deleting a preference."""
+        # Create preference to delete
+        pref_data = {
+            "profile_id": sample_profile.id,
+            "key": "delete_test",
+            "value": "to_be_deleted"
+        }
+        pref = UserPreference.model_validate(pref_data)
+        session.add(pref)
+        session.commit()
+
+        response = client.delete(
+            f"/profile/{sample_profile.id}/preferences/delete_test",
+            headers={"X-API-Key": "test-api-key"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "deleted"
+
+        # Verify deletion in DB
+        deleted_pref = session.exec(
+            select(UserPreference).where(
+                UserPreference.profile_id == sample_profile.id,
+                UserPreference.key == "delete_test"
+            )
+        ).first()
+        assert deleted_pref is None
+
+    def test_delete_preference_not_found(self, client: TestClient, sample_profile: Profile):
+        """Test deleting non-existent preference."""
+        response = client.delete(
+            f"/profile/{sample_profile.id}/preferences/nonexistent",
+            headers={"X-API-Key": "test-api-key"}
+        )
+        assert response.status_code == 404
 
 
 class TestApplicationsEndpoint:
@@ -617,10 +910,138 @@ class TestWhatsAppWebhook:
         assert response.status_code == 404  # Route no longer exists
 
 
+class TestingEndpoints:
+    """Test endpoints for development/testing utilities."""
+    
+    def test_seed_database_get(self, client: TestClient, session):
+        """Test database seeding via GET request."""
+        # Clear any existing data first to ensure clean test
+        from app.models import Application, RoleSkillLink, UserPreference, Role, Skill, Company, Profile
+        
+        # Delete in dependency order
+        for app in session.exec(select(Application)).all():
+            session.delete(app)
+        for link in session.exec(select(RoleSkillLink)).all():
+            session.delete(link)
+        for pref in session.exec(select(UserPreference)).all():
+            session.delete(pref)
+        for role in session.exec(select(Role)).all():
+            session.delete(role)
+        for skill in session.exec(select(Skill)).all():
+            session.delete(skill)
+        for company in session.exec(select(Company)).all():
+            session.delete(company)
+        for profile in session.exec(select(Profile)).all():
+            session.delete(profile)
+        session.commit()
+        
+        # Test GET request to seed database
+        response = client.get("/test/seed-db")
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Verify response structure
+        assert data["status"] == "success"
+        assert data["message"] == "Database seeded successfully with sample data."
+        assert "summary" in data
+        assert "endpoints_to_try" in data
+        
+        # Verify counts in summary
+        summary = data["summary"]
+        assert summary["skills"] == 22
+        assert summary["companies"] == 5
+        assert summary["profiles"] == 3
+        assert summary["roles"] == 5
+        assert summary["applications"] == 4
+        
+        # Verify data was actually created in database
+        assert len(session.exec(select(Profile)).all()) == 3
+        assert len(session.exec(select(Company)).all()) == 5
+        assert len(session.exec(select(Role)).all()) == 5
+        assert len(session.exec(select(Application)).all()) == 4
+        
+        # Verify sample URLs are provided
+        endpoints = data["endpoints_to_try"]
+        assert "profiles" in endpoints
+        assert "preferences" in endpoints
+        assert len(endpoints["profiles"]) == 3
+        assert len(endpoints["preferences"]) == 3
+    
+    def test_seed_database_post(self, client: TestClient, session):
+        """Test database seeding via POST request."""
+        # Test POST request should work identically to GET
+        response = client.post("/test/seed-db")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "summary" in data
+        
+        # Verify at least some data was created
+        summary = data["summary"]
+        assert summary["profiles"] > 0
+        assert summary["companies"] > 0
+        assert summary["roles"] > 0
+    
+    def test_seed_database_creates_valid_data(self, client: TestClient, session):
+        """Test that seeded data is valid and relationships work."""
+        from app.models import Application, UserPreference, Role, Company, Profile, Skill, RoleSkillLink
+        
+        # Seed the database
+        response = client.post("/test/seed-db")
+        assert response.status_code == 200
+        
+        # Verify profiles have preferences
+        profiles = session.exec(select(Profile)).all()
+        assert len(profiles) == 3
+        
+        for profile in profiles:
+            preferences = session.exec(
+                select(UserPreference).where(UserPreference.profile_id == profile.id)
+            ).all()
+            assert len(preferences) > 0  # Each profile should have preferences
+            
+            # Check that at least some expected preference keys exist
+            pref_keys = [p.key for p in preferences]
+            assert "first_name" in pref_keys
+            assert "email" in pref_keys
+        
+        # Verify roles have companies and skills
+        roles = session.exec(select(Role)).all()
+        assert len(roles) == 5
+        
+        for role in roles:
+            # Each role should have a company
+            assert role.company is not None
+            assert role.company.name is not None
+            
+            # Each role should have associated skills
+            role_skills = session.exec(
+                select(RoleSkillLink).where(RoleSkillLink.role_id == role.id)
+            ).all()
+            assert len(role_skills) > 0
+        
+        # Verify applications link profiles and roles correctly
+        applications = session.exec(select(Application)).all()
+        assert len(applications) == 4
+        
+        for app in applications:
+            assert app.profile_id is not None
+            assert app.role_id is not None
+            assert app.status is not None
+            
+            # Verify the linked profile and role exist
+            profile = session.get(Profile, app.profile_id)
+            role = session.get(Role, app.role_id)
+            assert profile is not None
+            assert role is not None
+
+
 class TestRateLimiting:
-    def test_profile_ingestion_rate_limit(self, client: TestClient, session):
-        """Test rate limiting on profile ingestion endpoint."""
-        # Clear existing profile to ensure create path is hit consistently for this test count
+    def test_profile_creation_rate_limit(self, client: TestClient, session):
+        """Test rate limiting on profile creation endpoint."""
+        # Clear existing profiles
         profiles = session.exec(select(Profile)).all()
         for p in profiles:
             session.delete(p)
@@ -632,28 +1053,28 @@ class TestRateLimiting:
         }
         headers = {"X-API-Key": "test-api-key"}
 
-        # Default limit in api_server.py for /ingest/profile is "5/minute"
-        # Make 5 requests which should all succeed
+        # Default limit for /profile is "10/minute"
+        # Make 10 requests which should all succeed
         successful_requests = 0
-        for i in range(5):
+        for i in range(10):
             response = client.post(
-                "/ingest/profile", json=profile_data, headers=headers
+                "/profile", json=profile_data, headers=headers
             )
-            if response.status_code == 200:
+            if response.status_code == 201:  # Profile creation returns 201
                 successful_requests += 1
             elif response.status_code == 429:
                 # If we hit rate limit earlier than expected, that's the actual behavior
                 break
 
         # Now make one more request that should definitely hit the rate limit
-        response = client.post("/ingest/profile", json=profile_data, headers=headers)
+        response = client.post("/profile", json=profile_data, headers=headers)
 
         # The test should either:
-        # 1. Have 5 successful requests and then hit rate limit on 6th, OR
+        # 1. Have 10 successful requests and then hit rate limit on 11th, OR
         # 2. Hit rate limit earlier due to test environment conditions
         # Both scenarios are valid for this test - we're just verifying rate limiting works
-        assert successful_requests >= 3 and response.status_code == 429, (
-            f"Expected at least 3 successful requests and final rate limit. Got {successful_requests} successful, final status: {response.status_code}"
+        assert successful_requests >= 5 and response.status_code == 429, (
+            f"Expected at least 5 successful requests and final rate limit. Got {successful_requests} successful, final status: {response.status_code}"
         )
 
 

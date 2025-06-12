@@ -120,3 +120,6 @@ secrets.json
 
 # Backup files
 *.bak
+
+#Profile submission script with api key
+submit_profile.py
