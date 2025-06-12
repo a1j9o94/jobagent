@@ -52,13 +52,25 @@ describe('StagehandWrapper', () => {
       if (originalOpenAIKey) process.env.OPENAI_API_KEY = originalOpenAIKey;
     });
 
-    it('should skip initialization in test environment', async () => {
-      // Set test environment
+    it('should initialize in test environment when credentials are available', async () => {
+      // Ensure we're in test environment (which we already are)
       const originalNodeEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'test';
 
+      // Check if we have credentials
+      const hasCredentials = process.env.BROWSERBASE_API_KEY && 
+                           process.env.BROWSERBASE_PROJECT_ID && 
+                           process.env.OPENAI_API_KEY;
+
       await wrapper.initialize();
-      expect(wrapper.isAvailable()).toBe(false);
+      
+      if (hasCredentials) {
+        // Should initialize successfully when credentials are available
+        expect(wrapper.isAvailable()).toBe(true);
+      } else {
+        // Should not initialize when credentials are missing
+        expect(wrapper.isAvailable()).toBe(false);
+      }
 
       // Restore environment
       if (originalNodeEnv) {

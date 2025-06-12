@@ -89,6 +89,8 @@ services:
       context: ./node-scraper
       dockerfile: Dockerfile
       target: builder # Use builder stage to have dev dependencies
+    env_file:
+      - .env # Load main .env for Browserbase credentials
     environment:
       - NODE_ENV=test
       - NODE_REDIS_URL=redis://test_redis:6379/0
@@ -96,6 +98,10 @@ services:
       - STAGEHAND_TIMEOUT=5000
       - LOG_LEVEL=error
       - MAX_RETRIES=1
+      # Browserbase credentials for Stagehand tests (loaded from .env file)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - BROWSERBASE_API_KEY=${BROWSERBASE_API_KEY}
+      - BROWSERBASE_PROJECT_ID=${BROWSERBASE_PROJECT_ID}
     depends_on:
       test_redis:
         condition: service_healthy

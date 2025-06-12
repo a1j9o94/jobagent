@@ -1,7 +1,7 @@
 import { Stagehand } from '@browserbasehq/stagehand';
 import { z } from 'zod';
 import { logger } from './utils/logger';
-import {
+import { 
     StagehandConfig,
     ApplicationResult
 } from './types/stagehand';
@@ -66,14 +66,6 @@ export class StagehandWrapper {
 
     async initialize(): Promise<void> {
         try {
-            // Check if we're in test environment
-            const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
-            if (isTestEnv) {
-                logger.info('Skipping Stagehand initialization (test environment)');
-                this.stagehand = null;
-                return;
-            }
-
             // Check if we have the required credentials for Browserbase
             const hasRequiredCredentials = process.env.BROWSERBASE_API_KEY && 
                                          process.env.BROWSERBASE_PROJECT_ID && 
@@ -84,6 +76,12 @@ export class StagehandWrapper {
                 logger.warn('Required: BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID, OPENAI_API_KEY');
                 this.stagehand = null;
                 return;
+            }
+
+            // In test environment, only initialize if we have real credentials
+            const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+            if (isTestEnv) {
+                logger.info('Test environment detected. Initializing Stagehand with real credentials for testing.');
             }
 
             // Use Browserbase for cloud browser automation
@@ -97,7 +95,7 @@ export class StagehandWrapper {
                 },
                 domSettleTimeoutMs: 2000
             });
-            
+
             await this.stagehand.init();
             logger.info('Stagehand initialized successfully with Browserbase');
         } catch (error) {
@@ -134,7 +132,7 @@ export class StagehandWrapper {
 
         try {
             logger.info(`Processing job application for ${task.title} at ${task.company}`);
-            
+
             // Navigate to the job posting
             const page = this.stagehand.page;
             await page.goto(task.job_url);
@@ -158,8 +156,8 @@ export class StagehandWrapper {
                 if (loginRequired) {
                     const loginResult = await this.handleLogin(task.credentials);
                     if (!loginResult) {
-                        return {
-                            success: false,
+                    return {
+                        success: false,
                             error: 'Failed to login to the platform',
                             needsApproval: false
                         };
@@ -222,7 +220,7 @@ export class StagehandWrapper {
 
         try {
             await this.stagehand.page.act(`click the apply button or apply now button`);
-            return true;
+                    return true;
         } catch (error) {
             logger.error('Failed to find or click apply button:', error);
             return false;
@@ -287,7 +285,7 @@ export class StagehandWrapper {
 
             for (const field of standardFields) {
                 if (field.value) {
-                    await this.stagehand.page.act(`fill in the ${field.field} field with "${field.value}"`);
+                        await this.stagehand.page.act(`fill in the ${field.field} field with "${field.value}"`);
                 }
             }
 
@@ -318,8 +316,8 @@ export class StagehandWrapper {
 
         } catch (error) {
             logger.error('Error filling application form:', error);
-            return {
-                success: false,
+            return { 
+                success: false, 
                 error: error instanceof Error ? error.message : 'Unknown error'
             };
         }
@@ -347,12 +345,12 @@ export class StagehandWrapper {
         try {
             // Look for submit button and click it
             const action = 'click the submit button, apply button, or send application button';
-            await this.stagehand.page.act(action);
-            
+                    await this.stagehand.page.act(action);
+                    
             // Wait for submission to complete
-            await this.stagehand.page.waitForLoadState('domcontentloaded');
-            
-            // Check if submission was successful
+                    await this.stagehand.page.waitForLoadState('domcontentloaded');
+                    
+                    // Check if submission was successful
             const success = await this.stagehand.page.extract({
                 instruction: "Check if the application was submitted successfully by looking for confirmation messages, success indicators, or thank you pages",
                 schema: SubmissionResultSchema
@@ -390,7 +388,7 @@ export class StagehandWrapper {
             // Take screenshot
             const screenshot = await page.screenshot({
                 path: `/tmp/screenshot-${Date.now()}.png`,
-                fullPage: true
+                fullPage: true 
             });
 
             // In a real implementation, you would upload this to S3 or similar

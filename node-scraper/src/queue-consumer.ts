@@ -28,10 +28,10 @@ class JobApplicationService {
             this.startHeartbeat();
 
             this.isRunning = true;
-            
+
             // Start processing tasks using ApplicationProcessor
             await this.processor.startProcessing();
-            
+
         } catch (error) {
             logger.error('Failed to start service:', error);
             throw error;
@@ -66,7 +66,7 @@ class JobApplicationService {
         logger.info('Shutting down Job Application Service...');
         
         this.isRunning = false;
-        
+
         if (this.heartbeatInterval) {
             clearInterval(this.heartbeatInterval);
         }
@@ -132,6 +132,6 @@ if (require.main === module) {
         logger.error('Unhandled error in main:', error);
         process.exit(1);
     });
-}
+} 
 
 export { JobApplicationService }; 

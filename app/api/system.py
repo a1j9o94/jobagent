@@ -72,7 +72,7 @@ async def health_check_endpoint():  # Renamed to avoid conflict with imported he
         pass
 
     health_status = {
-        "status": "ok", 
+        "status": "ok",
         "timestamp": datetime.now(UTC).isoformat(),
         "services": {
             "database": db_health_check(),
@@ -163,23 +163,23 @@ async def node_service_health_endpoint():
         
         if last_heartbeat:
             seconds_since = (datetime.now(UTC) - last_heartbeat).total_seconds()
-            
+        
             if seconds_since < 60:  # Healthy if heartbeat within last minute
-                service_status = "healthy"
-                status_code = status.HTTP_200_OK
-                details = {
+            service_status = "healthy"
+            status_code = status.HTTP_200_OK
+            details = {
                     "status": "Node.js service is responding",
                     "last_heartbeat": last_heartbeat.isoformat(),
                     "seconds_since_heartbeat": round(seconds_since, 1)
-                }
+            }
             else:
                 service_status = "unhealthy"
                 status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-                details = {
+            details = {
                     "status": f"Node.js service not responding - no heartbeat for {round(seconds_since, 1)} seconds",
                     "last_heartbeat": last_heartbeat.isoformat(),
                     "seconds_since_heartbeat": round(seconds_since, 1)
-                }
+            }
         else:
             service_status = "unhealthy"
             status_code = status.HTTP_503_SERVICE_UNAVAILABLE
