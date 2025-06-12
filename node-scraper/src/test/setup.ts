@@ -3,7 +3,10 @@ import { beforeAll, afterAll } from 'vitest';
 // Mock environment variables for tests
 process.env.NODE_ENV = 'test';
 process.env.LOG_LEVEL = 'error';
-process.env.NODE_REDIS_URL = 'redis://localhost:6380'; // Test Redis port
+// Only set NODE_REDIS_URL if not already set (allows docker-compose to override)
+if (!process.env.NODE_REDIS_URL) {
+  process.env.NODE_REDIS_URL = 'redis://localhost:6380'; // Test Redis port for local testing
+}
 process.env.STAGEHAND_HEADLESS = 'true';
 process.env.STAGEHAND_TIMEOUT = '5000';
 process.env.MAX_RETRIES = '1';

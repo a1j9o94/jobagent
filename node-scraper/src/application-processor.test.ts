@@ -1,11 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ApplicationProcessor } from './application-processor';
 import { RedisManager } from './utils/redis';
+import { StagehandWrapper } from './stagehand-wrapper';
 import { TaskType, JobApplicationTask } from './types/tasks';
 
 // Mock dependencies
 vi.mock('./utils/redis');
 vi.mock('./stagehand-wrapper');
+
+// Create mock function variables
+const mockInitialize = vi.fn().mockResolvedValue(undefined);
+const mockCleanup = vi.fn().mockResolvedValue(undefined);
+const mockProcessJobApplication = vi.fn().mockResolvedValue({
+  success: true,
+  confirmation_message: 'Mock success',
+  needsApproval: false
+});
+const mockIsAvailable = vi.fn().mockReturnValue(true);
 
 // Create mock instances
 const mockRedisManager = {
@@ -17,10 +28,11 @@ const mockRedisManager = {
 } as unknown as RedisManager;
 
 const mockStagehandWrapper = {
-  initialize: vi.fn().mockResolvedValue(undefined),
-  cleanup: vi.fn().mockResolvedValue(undefined),
-  processJobApplication: vi.fn()
-};
+  initialize: mockInitialize,
+  cleanup: mockCleanup,
+  processJobApplication: mockProcessJobApplication,
+  isAvailable: mockIsAvailable
+} as unknown as StagehandWrapper;
 
 // Mock the StagehandWrapper constructor
 vi.mock('./stagehand-wrapper', () => ({
@@ -32,7 +44,8 @@ describe('ApplicationProcessor', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    processor = new ApplicationProcessor(mockRedisManager);
+    // Use dependency injection to provide mock StagehandWrapper
+    processor = new ApplicationProcessor(mockRedisManager, mockStagehandWrapper);
   });
 
   afterEach(async () => {
@@ -45,11 +58,11 @@ describe('ApplicationProcessor', () => {
     it('should initialize Stagehand wrapper successfully', async () => {
       await processor.initialize();
       
-      expect(mockStagehandWrapper.initialize).toHaveBeenCalled();
+      expect(mockInitialize).toHaveBeenCalled();
     });
 
     it('should handle initialization errors', async () => {
-      mockStagehandWrapper.initialize.mockRejectedValueOnce(new Error('Init failed'));
+      mockInitialize.mockRejectedValueOnce(new Error('Init failed'));
       
       await expect(processor.initialize()).rejects.toThrow('Init failed');
     });
@@ -59,7 +72,7 @@ describe('ApplicationProcessor', () => {
     it('should cleanup Stagehand wrapper', async () => {
       await processor.cleanup();
       
-      expect(mockStagehandWrapper.cleanup).toHaveBeenCalled();
+      expect(mockCleanup).toHaveBeenCalled();
     });
   });
 
@@ -114,7 +127,7 @@ describe('ApplicationProcessor', () => {
 
     it('should handle successful application processing', async () => {
       // Mock successful Stagehand processing
-      mockStagehandWrapper.processJobApplication.mockResolvedValueOnce({
+      mockProcessJobApplication.mockResolvedValueOnce({
         success: true,
         submitted_at: new Date().toISOString(),
         confirmation_message: 'Application submitted successfully',
@@ -131,7 +144,7 @@ describe('ApplicationProcessor', () => {
       const processorAny = processor as any;
       await processorAny.processJobApplicationTask(sampleTask);
 
-      expect(mockStagehandWrapper.processJobApplication).toHaveBeenCalledWith(sampleTask.payload);
+      expect(mockProcessJobApplication).toHaveBeenCalledWith(sampleTask.payload);
       expect(mockRedisManager.publishTask).toHaveBeenCalledWith(
         TaskType.UPDATE_JOB_STATUS,
         expect.objectContaining({
@@ -144,7 +157,7 @@ describe('ApplicationProcessor', () => {
 
     it('should handle application failures', async () => {
       // Mock failed Stagehand processing
-      mockStagehandWrapper.processJobApplication.mockResolvedValueOnce({
+      mockProcessJobApplication.mockResolvedValueOnce({
         success: false,
         error: 'Failed to submit application',
         screenshot_url: 'http://example.com/error_screenshot.png'
@@ -169,7 +182,7 @@ describe('ApplicationProcessor', () => {
 
     it('should handle approval needed scenarios', async () => {
       // Mock approval needed response
-      mockStagehandWrapper.processJobApplication.mockResolvedValueOnce({
+      mockProcessJobApplication.mockResolvedValueOnce({
         success: false,
         needsApproval: true,
         question: 'What is your salary expectation?',
@@ -204,7 +217,7 @@ describe('ApplicationProcessor', () => {
       const errorTask = { ...sampleTask, retries: 0 };
 
       // Mock Stagehand error
-      mockStagehandWrapper.processJobApplication.mockRejectedValueOnce(
+      mockProcessJobApplication.mockRejectedValueOnce(
         new Error('Network error')
       );
 
@@ -226,7 +239,7 @@ describe('ApplicationProcessor', () => {
     it('should handle max retries exceeded', async () => {
       const maxRetriesTask = { ...sampleTask, retries: 1 }; // MAX_RETRIES is set to 1 in test env
 
-      mockStagehandWrapper.processJobApplication.mockRejectedValueOnce(
+      mockProcessJobApplication.mockRejectedValueOnce(
         new Error('Persistent error')
       );
 

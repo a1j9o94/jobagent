@@ -30,8 +30,8 @@ COPY src/ ./src/
 # Build TypeScript
 RUN npm run build
 
-# Production stage
-FROM node:20-alpine AS production
+# Development stage - keeps dev dependencies for local development
+FROM node:20-alpine AS development
 
 WORKDIR /app
 
@@ -43,7 +43,41 @@ RUN apk add --no-cache \
     freetype-dev \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    build-base \
+    python3 \
+    make \
+    g++
+
+# Copy package files and install ALL dependencies (including dev)
+COPY package*.json ./
+COPY tsconfig.json ./
+RUN npm ci
+
+# Copy source code
+COPY src/ ./src/
+
+# Create non-root user first
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Create directories that Stagehand needs and set ownership
+RUN mkdir -p /app/downloads /app/tmp && \
+    chown -R nodejs:nodejs /app
+
+USER nodejs
+
+# Install Playwright browsers for local development as the nodejs user
+RUN npx playwright install chromium
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
+
+# Production stage
+FROM node:20-alpine AS production
+
+WORKDIR /app
 
 # Copy package files and install production dependencies
 COPY package*.json ./
@@ -55,10 +89,6 @@ COPY --from=builder /app/dist ./dist
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
-
-# Set environment variables for Playwright
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 USER nodejs
 

@@ -76,6 +76,7 @@ services:
     build: 
       context: ./node-scraper
       dockerfile: Dockerfile
+      target: development
     environment:
       - NODE_ENV=development
       - NODE_REDIS_URL=redis://redis:6379/0

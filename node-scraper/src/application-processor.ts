@@ -17,16 +17,21 @@ export class ApplicationProcessor {
     private isProcessing: boolean = false;
     private maxRetries: number;
 
-    constructor(redis: RedisManager) {
+    constructor(redis: RedisManager, stagehand?: StagehandWrapper) {
         this.redis = redis;
-        this.stagehand = new StagehandWrapper();
+        this.stagehand = stagehand || new StagehandWrapper();
         this.maxRetries = parseInt(process.env.MAX_RETRIES || '3');
     }
 
     async initialize(): Promise<void> {
         try {
             await this.stagehand.initialize();
-            logger.info('Application processor initialized successfully');
+            
+            if (this.stagehand.isAvailable()) {
+                logger.info('Application processor initialized successfully with Stagehand');
+            } else {
+                logger.info('Application processor initialized in mock mode (Stagehand not available)');
+            }
         } catch (error) {
             logger.error('Failed to initialize application processor:', error);
             throw error;

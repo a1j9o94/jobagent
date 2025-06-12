@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
@@ -32,7 +32,7 @@ class QueueTask:
 
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.utcnow().isoformat()
+            self.created_at = datetime.now(UTC).isoformat()
 
 
 class JobApplicationTaskPayload(BaseModel):
@@ -95,7 +95,7 @@ class QueueManager:
     ) -> str:
         """Publish a task to the specified queue."""
         try:
-            task_id = f"{task_type.value}_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:8]}"
+            task_id = f"{task_type.value}_{int(datetime.now(UTC).timestamp())}_{uuid.uuid4().hex[:8]}"
             
             task = QueueTask(
                 id=task_id,

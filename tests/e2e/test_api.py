@@ -58,11 +58,15 @@ class TestHealthEndpoint:
         # For unit/integration tests with TestClient, mocks for external services are typical.
         # Assuming db is up via test_engine.
         # Mock redis, storage, notifications health checks if they are not actually running or are flaky.
+        from datetime import datetime, UTC
+        mock_heartbeat_time = datetime.now(UTC)
+        
         with (
             patch("app.api.system.db_health_check", return_value=True),
             patch("app.api.system.redis_health_check", return_value=True),
             patch("app.api.system.storage_health_check", return_value=True),
             patch("app.api.system.notification_health_check", return_value=True),
+            patch("app.queue_manager.queue_manager.get_last_heartbeat", return_value=mock_heartbeat_time),
         ):
             response = client.get("/health")
             assert response.status_code == 200
@@ -74,6 +78,7 @@ class TestHealthEndpoint:
             assert data["services"]["redis"] is True
             assert data["services"]["object_storage"] is True
             assert data["services"]["notifications"] is True
+            assert data["services"]["node_service"] is True
 
     def test_health_check_degraded(self, client: TestClient):
         with (

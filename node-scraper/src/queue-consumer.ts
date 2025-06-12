@@ -1,151 +1,102 @@
-import * as dotenv from 'dotenv';
-
-// Load environment variables
-dotenv.config();
-
-import { logger } from './utils/logger';
 import { RedisManager } from './utils/redis';
+import { logger } from './utils/logger';
 import { ApplicationProcessor } from './application-processor';
+import { JobApplicationTask, UpdateJobStatusTask, ApprovalRequestTask, TaskType } from './types/tasks';
 
 class JobApplicationService {
-    private redis: RedisManager;
+    private redisClient: RedisManager;
     private processor: ApplicationProcessor;
-    private isShuttingDown: boolean = false;
+    private isRunning = false;
     private heartbeatInterval?: NodeJS.Timeout;
 
     constructor() {
-        this.redis = new RedisManager();
-        this.processor = new ApplicationProcessor(this.redis);
+        this.redisClient = new RedisManager();
+        this.processor = new ApplicationProcessor(this.redisClient);
     }
 
     async start(): Promise<void> {
-        logger.info('Starting Job Application Service...');
-
         try {
-            // Connect to Redis
-            await this.redis.connect();
+            logger.info('Starting Job Application Service...');
+            
+            await this.redisClient.connect();
             logger.info('Connected to Redis');
 
-            // Initialize the application processor
+            // Initialize ApplicationProcessor (which includes Stagehand)
             await this.processor.initialize();
-            logger.info('Application processor initialized');
 
-            // Set up graceful shutdown
-            this.setupGracefulShutdown();
-
-            // Start heartbeat publishing
+            // Start heartbeat
             this.startHeartbeat();
 
-            // Start processing job applications
+            this.isRunning = true;
+            
+            // Start processing tasks using ApplicationProcessor
             await this.processor.startProcessing();
-
+            
         } catch (error) {
             logger.error('Failed to start service:', error);
-            await this.shutdown();
-            process.exit(1);
+            throw error;
         }
     }
 
     private startHeartbeat(): void {
-        logger.info('Starting heartbeat publishing...');
         this.heartbeatInterval = setInterval(async () => {
             try {
-                const heartbeatData = {
+                await this.redisClient.publish('heartbeat:node-scraper', {
+                    service: 'node-scraper',
                     timestamp: new Date().toISOString(),
-                    status: 'alive',
-                    uptime: process.uptime(),
-                    memory: process.memoryUsage(),
-                    service: 'node-scraper'
-                };
-
-                await this.redis.publish('heartbeat:node-scraper', heartbeatData);
-                logger.debug('Heartbeat published successfully');
+                    status: 'healthy'
+                });
             } catch (error) {
-                logger.error('Failed to publish heartbeat:', error);
+                logger.error('Failed to send heartbeat:', error);
             }
         }, 30000); // Every 30 seconds
     }
 
-    private setupGracefulShutdown(): void {
-        const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT', 'SIGUSR2'];
+    private async processJobApplications(): Promise<void> {
+        // This method is no longer needed as ApplicationProcessor handles the processing loop
+        logger.info('Processing delegated to ApplicationProcessor');
+    }
 
-        signals.forEach(signal => {
-            process.on(signal, async () => {
-                if (this.isShuttingDown) {
-                    logger.warn(`Received ${signal} during shutdown, forcing exit`);
-                    process.exit(1);
-                }
-
-                logger.info(`Received ${signal}, starting graceful shutdown...`);
-                this.isShuttingDown = true;
-                await this.shutdown();
-                process.exit(0);
-            });
-        });
-
-        // Handle uncaught exceptions
-        process.on('uncaughtException', (error) => {
-            logger.error('Uncaught Exception:', error);
-            this.shutdown().then(() => process.exit(1));
-        });
-
-        // Handle unhandled promise rejections
-        process.on('unhandledRejection', (reason, promise) => {
-            logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-            this.shutdown().then(() => process.exit(1));
-        });
+    private async handleJobApplication(task: JobApplicationTask): Promise<void> {
+        // This method is no longer needed as ApplicationProcessor handles individual tasks
+        logger.info('Task handling delegated to ApplicationProcessor');
     }
 
     async shutdown(): Promise<void> {
-        if (this.isShuttingDown) {
-            return;
-        }
-
         logger.info('Shutting down Job Application Service...');
-        this.isShuttingDown = true;
-
-        try {
-            // Stop processing new tasks
-            await this.processor.stopProcessing();
-
-            // Clean up resources
-            await this.processor.cleanup();
-
-            // Disconnect from Redis
-            await this.redis.disconnect();
-
-            // Stop heartbeat publishing
-            if (this.heartbeatInterval) {
-                clearInterval(this.heartbeatInterval);
-            }
-
-            logger.info('Service shutdown complete');
-        } catch (error) {
-            logger.error('Error during shutdown:', error);
+        
+        this.isRunning = false;
+        
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
         }
+        
+        logger.info('Stopping job application processing...');
+        
+        try {
+            await this.processor.stopProcessing();
+            await this.processor.cleanup();
+            logger.info('ApplicationProcessor cleaned up');
+        } catch (error) {
+            logger.error('Error cleaning up ApplicationProcessor:', error);
+        }
+        
+        try {
+            await this.redisClient.disconnect();
+            logger.info('Redis client disconnected');
+        } catch (error) {
+            logger.error('Error disconnecting Redis client:', error);
+        }
+        
+        logger.info('Service shutdown complete');
     }
 
-    async healthCheck(): Promise<any> {
+    // Health check method
+    async healthCheck(): Promise<boolean> {
         try {
-            const processorHealth = await this.processor.healthCheck();
-            const redisHealth = await this.redis.healthCheck();
-
-            return {
-                status: processorHealth.status === 'healthy' && redisHealth ? 'healthy' : 'unhealthy',
-                timestamp: new Date().toISOString(),
-                details: {
-                    processor: processorHealth,
-                    redis: redisHealth,
-                    uptime: process.uptime(),
-                    memory: process.memoryUsage()
-                }
-            };
+            return await this.redisClient.healthCheck();
         } catch (error) {
-            return {
-                status: 'unhealthy',
-                timestamp: new Date().toISOString(),
-                error: error instanceof Error ? error.message : String(error)
-            };
+            return false;
         }
     }
 }
@@ -154,21 +105,33 @@ class JobApplicationService {
 async function main() {
     const service = new JobApplicationService();
     
+    // Handle graceful shutdown
+    process.on('SIGINT', async () => {
+        logger.info('Received SIGINT, shutting down gracefully...');
+        await service.shutdown();
+        process.exit(0);
+    });
+    
+    process.on('SIGTERM', async () => {
+        logger.info('Received SIGTERM, shutting down gracefully...');
+        await service.shutdown();
+        process.exit(0);
+    });
+    
     try {
         await service.start();
     } catch (error) {
-        logger.error('Service failed to start:', error);
+        logger.error('Failed to start service:', error);
         process.exit(1);
     }
 }
 
-// Export for testing purposes
-export { JobApplicationService };
-
-// Start the service if this file is run directly
+// Start the service
 if (require.main === module) {
     main().catch((error) => {
-        logger.error('Fatal error:', error);
+        logger.error('Unhandled error in main:', error);
         process.exit(1);
     });
-} 
+}
+
+export { JobApplicationService }; 

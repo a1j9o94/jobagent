@@ -56,10 +56,10 @@ async def health_check_endpoint():  # Renamed to avoid conflict with imported he
     node_service_healthy = False
     try:
         from app.queue_manager import queue_manager
-        last_heartbeat = await queue_manager.get_last_heartbeat('node-scraper')
+        last_heartbeat = queue_manager.get_last_heartbeat('node-scraper')
         if last_heartbeat:
             # Consider service healthy if heartbeat within last minute
-            heartbeat_age = datetime.now(UTC) - datetime.fromisoformat(last_heartbeat['timestamp'])
+            heartbeat_age = datetime.now(UTC) - last_heartbeat
             node_service_healthy = heartbeat_age.total_seconds() < 60
     except Exception:
         pass
