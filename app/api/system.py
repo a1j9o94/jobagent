@@ -165,13 +165,13 @@ async def node_service_health_endpoint():
             seconds_since = (datetime.now(UTC) - last_heartbeat).total_seconds()
         
             if seconds_since < 60:  # Healthy if heartbeat within last minute
-            service_status = "healthy"
-            status_code = status.HTTP_200_OK
-            details = {
-                    "status": "Node.js service is responding",
-                    "last_heartbeat": last_heartbeat.isoformat(),
-                    "seconds_since_heartbeat": round(seconds_since, 1)
-            }
+                service_status = "healthy"
+                status_code = status.HTTP_200_OK
+                details = {
+                        "status": "Node.js service is responding",
+                        "last_heartbeat": last_heartbeat.isoformat(),
+                        "seconds_since_heartbeat": round(seconds_since, 1)
+                }
             else:
                 service_status = "unhealthy"
                 status_code = status.HTTP_503_SERVICE_UNAVAILABLE
