@@ -148,7 +148,7 @@ if flyctl secrets list --app "${APP_NAME}" | grep -q "AWS_ACCESS_KEY_ID"; then
     print_success "Tigris storage credentials already exist"
     
     # Get the existing bucket name from secrets
-    EXISTING_BUCKET=$(flyctl secrets list --app "${APP_NAME}" | grep "BUCKET_NAME" | awk '{print $2}' || echo "")
+    EXISTING_BUCKET=$(flyctl secrets list --app "${APP_NAME}" | grep "BUCKET_NAME" | awk '{print $2}' | tr -d '\n\r' || echo "")
     if [ -n "$EXISTING_BUCKET" ]; then
         BUCKET_NAME="$EXISTING_BUCKET"
         print_success "Using existing bucket: $BUCKET_NAME"
@@ -162,6 +162,9 @@ else
     
     print_status "Tigris creation output:"
     echo "$TIGRIS_OUTPUT"
+    
+    # Ensure bucket name is clean
+    BUCKET_NAME=$(echo "$BUCKET_NAME" | tr -d '\n\r' | xargs)
     
     # Try multiple patterns to extract credentials
     AWS_ACCESS_KEY_ID=$(echo "$TIGRIS_OUTPUT" | grep -E "(AWS_ACCESS_KEY_ID|Access Key ID)" | awk -F'[:=]' '{print $NF}' | tr -d ' ' | head -1)
@@ -310,8 +313,10 @@ print_status "Updating fly.toml configuration..."
 
 # Update fly.toml with the correct S3 bucket name
 if [ -n "$BUCKET_NAME" ]; then
-    sed -i.bak "s/S3_BUCKET_NAME = \".*\"/S3_BUCKET_NAME = \"$BUCKET_NAME\"/" fly.toml
-    print_success "Updated S3_BUCKET_NAME in fly.toml to: $BUCKET_NAME"
+    # Clean the bucket name to remove any whitespace or newlines
+    CLEAN_BUCKET_NAME=$(echo "$BUCKET_NAME" | tr -d '\n\r' | xargs)
+    sed -i.bak "s/S3_BUCKET_NAME = \".*\"/S3_BUCKET_NAME = \"$CLEAN_BUCKET_NAME\"/" fly.toml
+    print_success "Updated S3_BUCKET_NAME in fly.toml to: $CLEAN_BUCKET_NAME"
 fi
 
 # Update API_BASE_URL in fly.toml
