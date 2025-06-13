@@ -40,6 +40,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade Node.js to a modern LTS (v20) for TypeScript build tooling
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && node --version && npm --version
+
 # Copy project files needed for installation
 COPY pyproject.toml entrypoint.sh alembic.ini release-tasks.sh ./
 COPY app/ ./app/
@@ -58,6 +63,10 @@ RUN uv pip install --system --no-cache-dir ".[dev]"
 
 # Build Node.js service
 WORKDIR /code/node-scraper
+# Configure npm to be more resilient to registry outages
+RUN npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set fetch-retries 5
 RUN npm ci  # Install all dependencies including dev (TypeScript) for building
 RUN npm run build
 RUN npm prune --omit=dev  # Remove dev dependencies after building

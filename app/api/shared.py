@@ -76,6 +76,10 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Include the files router for serving storage files
+from app.api.files import router as files_router
+app.include_router(files_router)
+
 # API Key authentication
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=True)
 PROFILE_INGEST_API_KEY = os.getenv("PROFILE_INGEST_API_KEY", "default-key")

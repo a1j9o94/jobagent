@@ -72,6 +72,15 @@ print_status "Setting up PostgreSQL database..."
 DB_NAME="${APP_NAME}-db"
 if ! flyctl postgres list | grep -q "${DB_NAME}"; then
     print_status "Creating PostgreSQL database: ${DB_NAME}"
+    
+    # Check if there's an existing DATABASE_URL from a previously destroyed database
+    if flyctl secrets list --app "${APP_NAME}" | grep -q "^DATABASE_URL "; then
+        print_warning "Found existing DATABASE_URL secret from previous database. Removing it..."
+        flyctl secrets unset DATABASE_URL --app "${APP_NAME}" || true
+        print_status "Waiting for secret removal to propagate..."
+        sleep 5
+    fi
+    
     flyctl postgres create \
         --name "${DB_NAME}" \
         --region "${REGION}" \
@@ -80,7 +89,13 @@ if ! flyctl postgres list | grep -q "${DB_NAME}"; then
         --volume-size 1
     
     print_status "Attaching PostgreSQL database to app..."
-    flyctl postgres attach "${DB_NAME}" --app "${APP_NAME}"
+    # Retry attachment in case of transient issues
+    if ! flyctl postgres attach "${DB_NAME}" --app "${APP_NAME}"; then
+        print_warning "First attachment attempt failed. Retrying in 5 seconds..."
+        sleep 5
+        flyctl postgres attach "${DB_NAME}" --app "${APP_NAME}"
+    fi
+    print_success "PostgreSQL database created and attached successfully"
 else
     print_success "PostgreSQL database ${DB_NAME} already exists"
 fi
@@ -131,19 +146,48 @@ BUCKET_NAME="${STORAGE_NAME}"  # Use consistent naming
 # Check if Tigris storage already exists by checking for AWS credentials
 if flyctl secrets list --app "${APP_NAME}" | grep -q "AWS_ACCESS_KEY_ID"; then
     print_success "Tigris storage credentials already exist"
+    
+    # Get the existing bucket name from secrets
+    EXISTING_BUCKET=$(flyctl secrets list --app "${APP_NAME}" | grep "BUCKET_NAME" | awk '{print $2}' || echo "")
+    if [ -n "$EXISTING_BUCKET" ]; then
+        BUCKET_NAME="$EXISTING_BUCKET"
+        print_success "Using existing bucket: $BUCKET_NAME"
+    fi
 else
     print_status "Creating Tigris storage bucket: ${STORAGE_NAME}"
     
     # Create Tigris storage and capture the output
-    TIGRIS_OUTPUT=$(flyctl storage create "${STORAGE_NAME}" --app "${APP_NAME}" --yes 2>&1 || true)
+    print_status "Running: flyctl storage create ${STORAGE_NAME} --app ${APP_NAME} --yes"
+    TIGRIS_OUTPUT=$(flyctl storage create "${STORAGE_NAME}" --app "${APP_NAME}" --yes 2>&1)
     
-    # Extract credentials from output
-    AWS_ACCESS_KEY_ID=$(echo "$TIGRIS_OUTPUT" | grep "AWS_ACCESS_KEY_ID:" | awk '{print $2}' || echo "")
-    AWS_SECRET_ACCESS_KEY=$(echo "$TIGRIS_OUTPUT" | grep "AWS_SECRET_ACCESS_KEY:" | awk '{print $2}' || echo "")
+    print_status "Tigris creation output:"
+    echo "$TIGRIS_OUTPUT"
+    
+    # Try multiple patterns to extract credentials
+    AWS_ACCESS_KEY_ID=$(echo "$TIGRIS_OUTPUT" | grep -E "(AWS_ACCESS_KEY_ID|Access Key ID)" | awk -F'[:=]' '{print $NF}' | tr -d ' ' | head -1)
+    AWS_SECRET_ACCESS_KEY=$(echo "$TIGRIS_OUTPUT" | grep -E "(AWS_SECRET_ACCESS_KEY|Secret Access Key)" | awk -F'[:=]' '{print $NF}' | tr -d ' ' | head -1)
+    
+    # Alternative extraction method using different patterns
+    if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+        AWS_ACCESS_KEY_ID=$(echo "$TIGRIS_OUTPUT" | grep -oE 'tid_[a-zA-Z0-9_]+' | head -1)
+    fi
+    
+    if [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+        AWS_SECRET_ACCESS_KEY=$(echo "$TIGRIS_OUTPUT" | grep -oE 'tsec_[a-zA-Z0-9_]+' | head -1)
+    fi
+    
+    print_status "Extracted credentials:"
+    print_status "AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:0:10}... (${#AWS_ACCESS_KEY_ID} chars)"
+    print_status "AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:0:10}... (${#AWS_SECRET_ACCESS_KEY} chars)"
     
     if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-        print_warning "Could not extract Tigris credentials automatically."
-        print_warning "Please set them manually using the output from the storage creation."
+        print_error "Could not extract Tigris credentials automatically."
+        print_error "Tigris output was:"
+        echo "$TIGRIS_OUTPUT"
+        print_error "Please extract credentials manually and set them using:"
+        print_error "flyctl secrets set AWS_ACCESS_KEY_ID=<key> AWS_SECRET_ACCESS_KEY=<secret> --app ${APP_NAME}"
+        print_error "Then re-run this script."
+        exit 1
     else
         print_success "Tigris credentials extracted successfully"
     fi
@@ -240,7 +284,9 @@ if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
         "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}"
         "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}"
         "AWS_ENDPOINT_URL_S3=https://fly.storage.tigris.dev"
+        "S3_ENDPOINT_URL=https://fly.storage.tigris.dev"
         "AWS_REGION=auto"
+        "S3_BUCKET_NAME=${BUCKET_NAME}"
         "BUCKET_NAME=${BUCKET_NAME}"
     )
 fi
@@ -296,6 +342,34 @@ else
     print_status "Check logs with: flyctl logs --app ${APP_NAME}"
 fi
 
+# Verify S3 bucket accessibility
+print_status "Verifying S3 bucket setup..."
+if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${BUCKET_NAME:-}" ]; then
+    print_status "Testing bucket access with curl..."
+    
+    # Test if bucket is accessible (this will return 403 if bucket doesn't exist, 200 if it does)
+    BUCKET_TEST=$(curl -s -o /dev/null -w "%{http_code}" \
+        -H "Authorization: AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/$(date +%Y%m%d)/auto/s3/aws4_request" \
+        "https://fly.storage.tigris.dev/${BUCKET_NAME}/")
+    
+    if [ "$BUCKET_TEST" = "200" ] || [ "$BUCKET_TEST" = "404" ]; then
+        print_success "✅ Bucket ${BUCKET_NAME} is accessible"
+    else
+        print_warning "⚠️  Bucket access test returned HTTP ${BUCKET_TEST}"
+        print_status "Creating bucket via app endpoint..."
+        
+        # Try to trigger bucket creation via health check
+        curl -s "${APP_URL}/health" > /dev/null || true
+        
+        print_status "If bucket issues persist, you may need to:"
+        print_status "1. SSH into the app: flyctl ssh console --app ${APP_NAME}"
+        print_status "2. Run: python -c 'from app.tools.storage import ensure_bucket_exists; print(ensure_bucket_exists())'"
+        print_status "3. Check logs: flyctl logs --app ${APP_NAME}"
+    fi
+else
+    print_warning "⚠️  S3 credentials not set. Bucket verification skipped."
+fi
+
 print_success "🎉 Job Agent successfully deployed to Fly.io!"
 print_status "🌐 Your application is available at: ${APP_URL}"
 
@@ -329,6 +403,19 @@ echo "  flyctl scale count 2 --app ${APP_NAME}           # Scale to 2 instances"
 echo "  flyctl secrets list --app ${APP_NAME}            # List secrets"
 echo "  flyctl storage dashboard --app ${APP_NAME}       # Manage storage"
 
+echo ""
+print_status "🔍 Debug Information:"
+echo "  S3 Endpoint: https://fly.storage.tigris.dev"
+echo "  Bucket Name: ${BUCKET_NAME}"
+echo "  Storage Name: ${STORAGE_NAME}"
+echo ""
+print_status "🛠️  Troubleshooting S3 Issues:"
+echo "  If you're getting 403 Forbidden errors:"
+echo "  1. Check if credentials are set: flyctl secrets list --app ${APP_NAME} | grep AWS"
+echo "  2. SSH into app and test: flyctl ssh console --app ${APP_NAME}"
+echo "  3. Run storage test: python -c 'from app.tools.storage import health_check; print(health_check())'"
+echo "  4. Check bucket exists: python -c 'from app.tools.storage import ensure_bucket_exists; print(ensure_bucket_exists())'"
+echo "  5. View detailed logs: flyctl logs --app ${APP_NAME} | grep -E '(ERROR|bucket|storage|S3)'"
 echo ""
 print_status "📝 Next Steps:"
 echo "  1. Check application logs: flyctl logs --app ${APP_NAME}"

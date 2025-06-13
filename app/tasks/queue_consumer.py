@@ -233,9 +233,13 @@ def task_queue_consumer_runner(self):
         # Process approval requests  
         approval_result = task_consume_approval_requests.delay()
         
+        logger.info(f"Triggered consumer tasks: status_updates ({status_result.id}), approval_requests ({approval_result.id})")
         return {
-            "status_updates": status_result.get(timeout=30),
-            "approval_requests": approval_result.get(timeout=30)
+            "status": "triggered",
+            "task_ids": {
+                "status_updates": status_result.id,
+                "approval_requests": approval_result.id
+            }
         }
     except Exception as e:
         logger.error(f"Error in queue consumer runner: {e}")

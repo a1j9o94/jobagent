@@ -22,6 +22,242 @@ from app.db import (
     get_session_context,
 )  # For direct db interactions if needed outside fixtures
 
+class TestStorageTools:
+    """Test the storage utility functions."""
+    
+    def test_get_public_storage_url_minio_localhost(self):
+        """Test URL generation for MinIO in local development."""
+        # Mock the environment variables directly in the function
+        with (
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'minio',
+                'API_BASE_URL': 'http://localhost:8000'
+            }),
+            patch('app.tools.storage.STORAGE_PROVIDER', 'minio'),
+            patch('app.tools.storage.API_BASE_URL', 'http://localhost:8000')
+        ):
+            from app.tools.storage import get_public_storage_url
+            url = get_public_storage_url()
+            assert url == "http://localhost:9000"
+    
+    def test_get_public_storage_url_tigris_production(self):
+        """Test URL generation for Tigris in production."""
+        with (
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'tigris',
+                'API_BASE_URL': 'https://jobagent.fly.dev'
+            }),
+            patch('app.tools.storage.STORAGE_PROVIDER', 'tigris'),
+            patch('app.tools.storage.API_BASE_URL', 'https://jobagent.fly.dev')
+        ):
+            from app.tools.storage import get_public_storage_url
+            url = get_public_storage_url()
+            assert url == "https://jobagent.fly.dev/api/files"
+    
+    def test_get_public_storage_url_minio_custom(self):
+        """Test URL generation for MinIO with custom API base URL."""
+        with (
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'minio',
+                'API_BASE_URL': 'http://custom:8000'
+            }),
+            patch('app.tools.storage.STORAGE_PROVIDER', 'minio'),
+            patch('app.tools.storage.API_BASE_URL', 'http://custom:8000')
+        ):
+            from app.tools.storage import get_public_storage_url
+            url = get_public_storage_url()
+            assert url == "http://localhost:9000"  # Fallback for non-localhost
+    
+    @patch('app.tools.storage.s3_client')
+    @patch('app.tools.storage.ensure_bucket_exists')
+    def test_upload_file_to_storage_minio(self, mock_ensure_bucket, mock_s3_client):
+        """Test file upload with MinIO storage provider."""
+        mock_ensure_bucket.return_value = True
+        mock_s3_client.put_object.return_value = None
+        
+        with (
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'minio',
+                'API_BASE_URL': 'http://localhost:8000',
+                'S3_BUCKET_NAME': 'test-bucket'
+            }),
+            patch('app.tools.storage.STORAGE_PROVIDER', 'minio'),
+            patch('app.tools.storage.API_BASE_URL', 'http://localhost:8000'),
+            patch('app.tools.storage.S3_BUCKET_NAME', 'test-bucket')
+        ):
+            from app.tools.storage import upload_file_to_storage
+            
+            file_data = b"test pdf content"
+            filename = "test_resume.pdf"
+            
+            result_url = upload_file_to_storage(file_data, filename)
+            
+            # For MinIO, should return direct bucket URL
+            expected_url = "http://localhost:9000/test-bucket/test_resume.pdf"
+            assert result_url == expected_url
+            
+            # Verify S3 client was called correctly
+            mock_s3_client.put_object.assert_called_once()
+            call_args = mock_s3_client.put_object.call_args
+            assert call_args[1]['Bucket'] == 'test-bucket'
+            assert call_args[1]['Key'] == 'test_resume.pdf'
+            assert call_args[1]['ContentType'] == 'application/pdf'
+    
+    @patch('app.tools.storage.s3_client')
+    @patch('app.tools.storage.ensure_bucket_exists')
+    def test_upload_file_to_storage_tigris(self, mock_ensure_bucket, mock_s3_client):
+        """Test file upload with Tigris storage provider."""
+        mock_ensure_bucket.return_value = True
+        mock_s3_client.put_object.return_value = None
+        
+        with (
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'tigris',
+                'API_BASE_URL': 'https://jobagent.fly.dev',
+                'S3_BUCKET_NAME': 'tigris-bucket'
+            }),
+            patch('app.tools.storage.STORAGE_PROVIDER', 'tigris'),
+            patch('app.tools.storage.API_BASE_URL', 'https://jobagent.fly.dev'),
+            patch('app.tools.storage.S3_BUCKET_NAME', 'tigris-bucket')
+        ):
+            from app.tools.storage import upload_file_to_storage
+            
+            file_data = b"test pdf content"
+            filename = "test_cover_letter.pdf"
+            
+            result_url = upload_file_to_storage(file_data, filename)
+            
+            # For Tigris, should return API route URL
+            expected_url = "https://jobagent.fly.dev/api/files/test_cover_letter.pdf"
+            assert result_url == expected_url
+            
+            # Verify S3 client was called correctly
+            mock_s3_client.put_object.assert_called_once()
+            call_args = mock_s3_client.put_object.call_args
+            assert call_args[1]['Bucket'] == 'tigris-bucket'
+            assert call_args[1]['Key'] == 'test_cover_letter.pdf'
+    
+    @patch('app.tools.storage.s3_client')
+    def test_download_file_from_storage(self, mock_s3_client):
+        """Test file download from storage."""
+        # Mock S3 response properly
+        mock_body = Mock()
+        mock_body.read.return_value = b"downloaded file content"
+        mock_response = {'Body': mock_body}
+        mock_s3_client.get_object.return_value = mock_response
+        
+        with (
+            patch.dict('os.environ', {'S3_BUCKET_NAME': 'test-bucket'}),
+            patch('app.tools.storage.S3_BUCKET_NAME', 'test-bucket')
+        ):
+            from app.tools.storage import download_file_from_storage
+            
+            result = download_file_from_storage("test_file.pdf")
+            
+            assert result == b"downloaded file content"
+            mock_s3_client.get_object.assert_called_once_with(
+                Bucket='test-bucket',
+                Key='test_file.pdf'
+            )
+    
+    @patch('app.tools.storage.s3_client')
+    def test_ensure_bucket_exists_minio_new_bucket(self, mock_s3_client):
+        """Test creating a new bucket with MinIO and setting public policy."""
+        from botocore.exceptions import ClientError
+        
+        # Simulate bucket doesn't exist (404 error)
+        mock_s3_client.head_bucket.side_effect = ClientError(
+            {'Error': {'Code': '404'}}, 'HeadBucket'
+        )
+        mock_s3_client.create_bucket.return_value = None
+        mock_s3_client.put_bucket_policy.return_value = None
+        
+        with (
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'minio',
+                'S3_BUCKET_NAME': 'new-bucket',
+                'S3_ENDPOINT_URL': 'http://localhost:9000'
+            }),
+            patch('app.tools.storage.STORAGE_PROVIDER', 'minio'),
+            patch('app.tools.storage.S3_BUCKET_NAME', 'new-bucket'),
+            patch('app.tools.storage.S3_ENDPOINT_URL', 'http://localhost:9000')
+        ):
+            from app.tools.storage import ensure_bucket_exists
+            
+            result = ensure_bucket_exists()
+            
+            assert result is True
+            mock_s3_client.create_bucket.assert_called_once_with(Bucket='new-bucket')
+            # Should set public read policy for MinIO
+            mock_s3_client.put_bucket_policy.assert_called_once()
+    
+    @patch('app.tools.storage.s3_client')
+    def test_ensure_bucket_exists_tigris_new_bucket(self, mock_s3_client):
+        """Test creating a new bucket with Tigris (no public policy)."""
+        from botocore.exceptions import ClientError
+        
+        # Simulate bucket doesn't exist (404 error)
+        mock_s3_client.head_bucket.side_effect = ClientError(
+            {'Error': {'Code': '404'}}, 'HeadBucket'
+        )
+        mock_s3_client.create_bucket.return_value = None
+        
+        with (
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'tigris',
+                'S3_BUCKET_NAME': 'tigris-bucket',
+                'S3_ENDPOINT_URL': 'https://fly.storage.tigris.dev'
+            }),
+            patch('app.tools.storage.STORAGE_PROVIDER', 'tigris'),
+            patch('app.tools.storage.S3_BUCKET_NAME', 'tigris-bucket'),
+            patch('app.tools.storage.S3_ENDPOINT_URL', 'https://fly.storage.tigris.dev')
+        ):
+            from app.tools.storage import ensure_bucket_exists
+            
+            result = ensure_bucket_exists()
+            
+            assert result is True
+            mock_s3_client.create_bucket.assert_called_once_with(Bucket='tigris-bucket')
+            # Should NOT set public read policy for Tigris
+            mock_s3_client.put_bucket_policy.assert_not_called()
+    
+    @patch('app.tools.storage.s3_client')
+    @patch('app.tools.storage.ensure_bucket_exists')
+    def test_health_check_success(self, mock_ensure_bucket, mock_s3_client):
+        """Test storage health check success."""
+        mock_ensure_bucket.return_value = True
+        mock_s3_client.list_objects_v2.return_value = {'Contents': []}
+        
+        with (
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'minio',
+                'S3_BUCKET_NAME': 'test-bucket',
+                'S3_ENDPOINT_URL': 'http://localhost:9000'
+            }),
+            patch('app.tools.storage.STORAGE_PROVIDER', 'minio'),
+            patch('app.tools.storage.S3_BUCKET_NAME', 'test-bucket'),
+            patch('app.tools.storage.S3_ENDPOINT_URL', 'http://localhost:9000')
+        ):
+            from app.tools.storage import health_check
+            
+            result = health_check()
+            
+            assert result['status'] == 'ok'
+            assert result['storage_provider'] == 'minio'
+            assert result['bucket'] == 'test-bucket'
+            assert result['endpoint'] == 'http://localhost:9000'
+            assert result['public_url_base'] == 'http://localhost:9000'
+    
+    def test_health_check_no_client(self):
+        """Test storage health check when S3 client is not initialized."""
+        with patch('app.tools.storage.s3_client', None):
+            from app.tools.storage import health_check
+            
+            result = health_check()
+            
+            assert result['status'] == 'error'
+            assert 'S3 client not initialized' in result['message']
+
 
 class TestTools:
     def test_generate_unique_hash_is_stable(self):
@@ -125,9 +361,18 @@ class TestSubmissionTasks:
         """Test successful application creation by task_apply_for_role."""
         from app.tasks.submission import task_apply_for_role
         
-        with patch("app.db.get_session_context") as mock_get_session:
+        with (
+            patch("app.db.get_session_context") as mock_get_session,
+            # Mock the celery chain to avoid running document generation
+            patch("app.tasks.submission.chain") as mock_chain
+        ):
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
+            
+            # Mock the chain workflow to return success without actually running
+            mock_workflow = Mock()
+            mock_workflow.apply_async.return_value.id = "test-workflow-id"
+            mock_chain.return_value = mock_workflow
             
             # Call the task function using apply() which handles the execution context
             result = task_apply_for_role.apply(
@@ -407,8 +652,8 @@ class TestAsyncTools:
 
             result = await rank_role(sample_role.id, sample_profile.id)
 
-            assert result.score == 0.0
-            assert "LLM call failed: LLM service unavailable" in result.rationale
+            assert result.score == 0.5
+            assert "Unable to generate LLM ranking due to tool call errors" in result.rationale
             # Check that status is not changed to RANKED
             session.refresh(sample_role)
             assert (
@@ -490,3 +735,75 @@ class TestAsyncTools:
             assert application.resume_s3_url == "http://storage/resume.pdf"
             assert application.cover_letter_s3_url == "http://storage/cover_letter.pdf"
             assert application.status == ApplicationStatus.READY_TO_SUBMIT
+
+    @pytest.mark.asyncio
+    async def test_draft_and_upload_documents_storage_provider_urls(
+        self,
+        session,
+        sample_profile: Profile,
+        sample_role: Role,
+        sample_company: Company,
+    ):
+        """Test document generation with different storage providers."""
+        # Create an application
+        application_data = {
+            "role_id": sample_role.id,
+            "profile_id": sample_profile.id,
+            "status": ApplicationStatus.DRAFT,
+        }
+        application = Application.model_validate(application_data)
+        session.add(application)
+        session.commit()
+        session.refresh(application)
+
+        # Ensure relations are loaded
+        session.refresh(sample_role)
+        if not sample_role.company:
+            sample_role.company = sample_company
+            session.add(sample_role)
+            session.commit()
+            session.refresh(sample_role)
+        application.role = sample_role
+        application.profile = sample_profile
+
+        # Test with Tigris storage provider
+        with (
+            patch("app.tools.documents.resume_agent") as mock_resume_agent,
+            patch("app.tools.documents.upload_file_to_storage") as mock_upload,
+            patch("app.tools.documents.render_to_pdf", return_value=b"pdf_bytes"),
+            patch("app.tools.documents.get_session_context") as mock_get_session,
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'tigris',
+                'API_BASE_URL': 'https://jobagent.fly.dev'
+            })
+        ):
+            # Mock the session context
+            mock_get_session.return_value.__enter__.return_value = session
+            mock_get_session.return_value.__exit__.return_value = None
+
+            # Mock LLM response
+            mock_llm_resume_result = Mock()
+            mock_resume_draft_data = ResumeDraft(
+                resume_md="# Resume Content",
+                cover_letter_md="# Cover Letter Content",
+                identified_skills=["Python", "FastAPI"],
+            )
+            mock_llm_resume_result.data = mock_resume_draft_data
+            mock_resume_agent.run = AsyncMock(return_value=mock_llm_resume_result)
+
+            # Mock file upload - should return API URLs for Tigris
+            mock_upload.side_effect = [
+                "https://jobagent.fly.dev/api/files/resume_123.pdf",
+                "https://jobagent.fly.dev/api/files/cover_letter_123.pdf",
+            ]
+
+            result = await draft_and_upload_documents(application.id)
+
+            assert result["status"] == "success"
+            assert "https://jobagent.fly.dev/api/files/" in result["resume_url"]
+            assert "https://jobagent.fly.dev/api/files/" in result["cover_letter_url"]
+
+            # Verify database was updated with API URLs
+            session.refresh(application)
+            assert "https://jobagent.fly.dev/api/files/" in application.resume_s3_url
+            assert "https://jobagent.fly.dev/api/files/" in application.cover_letter_s3_url

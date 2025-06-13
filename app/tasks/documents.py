@@ -15,13 +15,18 @@ def task_generate_documents(self, application_id: int):
         
         # Run the async function from a sync context
         result = asyncio.run(draft_and_upload_documents(application_id))
+        if isinstance(result, dict) and result.get("status") == "error":
+            # Raise an exception so Celery retries and marks as failed
+            raise RuntimeError(result.get("message", "Unknown error during document generation"))
         logger.info(f"Generated documents for application {application_id}")
         return result
     except Exception as e:
         logger.error(
             f"Failed to generate documents for application {application_id}: {e}"
         )
+        # Always retry if possible, otherwise let the exception propagate (fail the task)
         if self.request.retries < self.max_retries:
             countdown = 2**self.request.retries
             raise self.retry(countdown=countdown, exc=e)
-        return {"status": "error", "message": str(e), "application_id": application_id} 
+        # If retries are exhausted, do NOT return a dict—just let the exception propagate
+        raise 

@@ -1,6 +1,7 @@
 # app/tools/ranking.py
 import logging
 from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings
 
 from app.models import RankResult, Role, Profile, RoleStatus
 from app.db import get_session_context
@@ -11,6 +12,12 @@ logger = logging.getLogger(__name__)
 ranking_agent = Agent(
     "openai:gpt-4o-mini",
     result_type=RankResult,
+    model_settings=ModelSettings(
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        max_retries=3,
+        timeout=30.0
+    ),
     system_prompt="""You are a career advisor evaluating job role matches.
     Analyze the job description and candidate profile to provide an accurate fit score.
     Consider skills, experience level, company culture, and role requirements.""",
@@ -41,16 +48,42 @@ async def rank_role(role_id: int, profile_id: int) -> RankResult:
             Please provide a match score and rationale.
             """
 
-            result = await ranking_agent.run(prompt)
+            # Try with retry logic for pydantic AI agent
+            max_retries = 3
+            result_data = None
+            ranking_success = False
+            
+            for attempt in range(max_retries):
+                try:
+                    result = await ranking_agent.run(prompt)
+                    result_data = result.data
+                    ranking_success = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} failed for ranking: {e}")
+                    if attempt == max_retries - 1:
+                        logger.error(f"All {max_retries} attempts failed for ranking")
+                        # Create a fallback result
+                        result_data = RankResult(
+                            score=0.5, 
+                            rationale="Unable to generate LLM ranking due to tool call errors. Default score assigned."
+                        )
+                        ranking_success = False
+                    else:
+                        # Wait before retry
+                        import asyncio
+                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
             # Update the role with ranking results
-            role.rank_score = result.data.score
-            role.rank_rationale = result.data.rationale
-            role.status = RoleStatus.RANKED
+            role.rank_score = result_data.score
+            role.rank_rationale = result_data.rationale
+            # Only mark as RANKED if LLM call succeeded
+            if ranking_success:
+                role.status = RoleStatus.RANKED
             session.commit()
 
-            logger.info(f"Ranked role {role_id}: {result.data.score}")
-            return result.data
+            logger.info(f"Ranked role {role_id}: {result_data.score}")
+            return result_data
 
         except Exception as e:
             logger.error(f"LLM ranking failed: {e}")

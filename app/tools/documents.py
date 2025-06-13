@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any
 from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings
 
 from app.models import ResumeDraft, Application, ApplicationStatus
 from app.db import get_session_context
@@ -16,6 +17,12 @@ logger = logging.getLogger(__name__)
 resume_agent = Agent(
     "openai:gpt-4o-mini",
     result_type=ResumeDraft,
+    model_settings=ModelSettings(
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        max_retries=3,
+        timeout=30.0
+    ),
     system_prompt="""You are an expert resume writer and career coach.
     Create compelling, ATS-optimized resumes and cover letters tailored to specific job postings.
     Focus on quantifiable achievements and relevant keywords.""",
@@ -78,8 +85,29 @@ async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
             Focus on the specific requirements and skills mentioned above.
             """
 
-            result = await resume_agent.run(prompt)
-            draft = result.data
+            # Try with retry logic for pydantic AI agent
+            max_retries = 3
+            draft = None
+            
+            for attempt in range(max_retries):
+                try:
+                    result = await resume_agent.run(prompt)
+                    draft = result.data
+                    break
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} failed for document generation: {e}")
+                    if attempt == max_retries - 1:
+                        logger.error(f"All {max_retries} attempts failed for document generation")
+                        # Create a simple fallback draft
+                        draft = ResumeDraft(
+                            resume_md=f"# Resume for {profile.headline}\n\nApplying for: {role.title} at {role.company.name}\n\n## Summary\n{profile.summary}",
+                            cover_letter_md=f"# Cover Letter\n\nDear Hiring Manager,\n\nI am applying for the {role.title} position at {role.company.name}.\n\n{profile.summary}\n\nSincerely,\n{profile.headline}",
+                            identified_skills=[]
+                        )
+                    else:
+                        # Wait before retry
+                        import asyncio
+                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
             # Convert to PDF and upload
             resume_pdf = render_to_pdf(draft.resume_md)
@@ -94,10 +122,10 @@ async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
             )
 
             resume_url = upload_file_to_storage(
-                resume_pdf, resume_filename, "application/pdf"
+                resume_pdf, resume_filename
             )
             cover_letter_url = upload_file_to_storage(
-                cover_letter_pdf, cover_letter_filename, "application/pdf"
+                cover_letter_pdf, cover_letter_filename
             )
 
             if resume_url and cover_letter_url:

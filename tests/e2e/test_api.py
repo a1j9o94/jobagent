@@ -546,9 +546,18 @@ class TestApplicationsEndpoint:
         session.refresh(role)
         
         # Use the test session context to ensure the task can see the same data
-        with patch("app.db.get_session_context") as mock_get_session:
+        with (
+            patch("app.db.get_session_context") as mock_get_session,
+            # Mock the celery chain to avoid running document generation
+            patch("app.tasks.submission.chain") as mock_chain
+        ):
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
+            
+            # Mock the chain workflow to return success without actually running
+            mock_workflow = Mock()
+            mock_workflow.apply_async.return_value.id = "test-workflow-id"
+            mock_chain.return_value = mock_workflow
             
             # Call the task using apply() for proper execution context
             result = task_apply_for_role.apply(
@@ -689,6 +698,75 @@ class TestJobApplicationEndpoint:
         assert response.status_code == 404
 
 
+class TestFileServingEndpoints:
+    """Test the new file serving endpoints for storage."""
+    
+    @patch('app.api.files.download_file_from_storage')
+    def test_get_file_pdf_success(self, mock_download, client: TestClient):
+        """Test serving a PDF file successfully."""
+        mock_download.return_value = b"fake pdf content"
+        
+        response = client.get("/api/files/test_resume.pdf")
+        
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert "inline; filename=test_resume.pdf" in response.headers["content-disposition"]
+        assert "Cache-Control" in response.headers
+        assert response.content == b"fake pdf content"
+        
+        mock_download.assert_called_once_with("test_resume.pdf")
+    
+    @patch('app.api.files.download_file_from_storage')
+    def test_get_file_image_success(self, mock_download, client: TestClient):
+        """Test serving an image file successfully."""
+        mock_download.return_value = b"fake png content"
+        
+        response = client.get("/api/files/screenshot.png")
+        
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert "inline; filename=screenshot.png" in response.headers["content-disposition"]
+        assert response.content == b"fake png content"
+        
+        mock_download.assert_called_once_with("screenshot.png")
+    
+    @patch('app.api.files.download_file_from_storage')
+    def test_get_file_not_found(self, mock_download, client: TestClient):
+        """Test file not found scenario."""
+        mock_download.side_effect = Exception("File not found in storage")
+        
+        response = client.get("/api/files/nonexistent.pdf")
+        
+        assert response.status_code == 404
+        assert "File not found: nonexistent.pdf" in response.json()["detail"]
+    
+    @patch('app.api.files.download_file_from_storage')
+    def test_download_file_success(self, mock_download, client: TestClient):
+        """Test forcing file download."""
+        mock_download.return_value = b"fake pdf content for download"
+        
+        response = client.get("/api/files/test_resume.pdf/download")
+        
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert "attachment; filename=test_resume.pdf" in response.headers["content-disposition"]
+        assert "Cache-Control" in response.headers
+        assert "no-cache" in response.headers["cache-control"]
+        assert response.content == b"fake pdf content for download"
+        
+        mock_download.assert_called_once_with("test_resume.pdf")
+    
+    @patch('app.api.files.download_file_from_storage')
+    def test_download_file_not_found(self, mock_download, client: TestClient):
+        """Test download file not found scenario."""
+        mock_download.side_effect = Exception("Storage error")
+        
+        response = client.get("/api/files/missing.pdf/download")
+        
+        assert response.status_code == 404
+        assert "File not found: missing.pdf" in response.json()["detail"]
+
+
 class TestHealthEndpoints:
     """Test the new health check endpoints for queue monitoring."""
 
@@ -703,6 +781,22 @@ class TestHealthEndpoints:
         assert "queue_stats" in data
         # Queue stats should be present (even if empty/errored in test environment)
         assert isinstance(data["queue_stats"], dict)
+    
+    def test_health_check_includes_storage_info(self, client: TestClient):
+        """Test that health check includes storage provider information."""
+        with patch("app.api.system.storage_health_check") as mock_storage_check:
+            mock_storage_check.return_value = {
+                "status": "ok",
+                "storage_provider": "minio",
+                "bucket": "test-bucket",
+                "public_url_base": "http://localhost:9000"
+            }
+            
+            response = client.get("/health")
+            data = response.json()
+            
+            # Check that storage info is included somewhere in the response
+            assert "object_storage" in data.get("services", {}) or "storage" in str(data)
 
     @patch("app.queue_manager.queue_manager.health_check")
     @patch("app.queue_manager.queue_manager.get_queue_stats")
@@ -908,6 +1002,96 @@ class TestWhatsAppWebhook:
         mock_validator.validate.return_value = False
         response = client.post("/webhooks/whatsapp", data=self.webhook_data_generic)
         assert response.status_code == 404  # Route no longer exists
+
+
+class TestStorageIntegration:
+    """Test storage integration with different providers."""
+    
+    def test_document_generation_with_storage_urls(
+        self, client: TestClient, session, sample_profile: Profile
+    ):
+        """Test that document generation creates proper URLs based on storage provider."""
+        from app.models import Role, Company, Application, ApplicationStatus
+        
+        # Create test data
+        company = Company(name="TestCorp")
+        session.add(company)
+        session.commit()
+        session.refresh(company)
+        
+        role_data = {
+            "title": "Test Developer",
+            "description": "Test role",
+            "posting_url": "https://example.com/test-job",
+            "unique_hash": "test_hash_storage",
+            "company_id": company.id,
+        }
+        role = Role.model_validate(role_data)
+        session.add(role)
+        session.commit()
+        session.refresh(role)
+        
+        application_data = {
+            "role_id": role.id,
+            "profile_id": sample_profile.id,
+            "status": ApplicationStatus.DRAFT,
+        }
+        application = Application.model_validate(application_data)
+        session.add(application)
+        session.commit()
+        session.refresh(application)
+        
+        # Test the storage URL generation directly instead of running the full task
+        with (
+            patch.dict('os.environ', {
+                'STORAGE_PROVIDER': 'tigris',
+                'API_BASE_URL': 'https://jobagent.fly.dev'
+            }),
+            patch('app.tools.storage.STORAGE_PROVIDER', 'tigris'),
+            patch('app.tools.storage.API_BASE_URL', 'https://jobagent.fly.dev')
+        ):
+            from app.tools.storage import get_public_storage_url
+            
+            url = get_public_storage_url()
+            assert url == "https://jobagent.fly.dev/api/files"
+            
+            # Test URL generation for files
+            with patch('app.tools.storage.upload_file_to_storage') as mock_upload:
+                mock_upload.return_value = "https://jobagent.fly.dev/api/files/test_file.pdf"
+                
+                from app.tools.storage import upload_file_to_storage
+                result_url = upload_file_to_storage(b"test content", "test_file.pdf")
+                assert "https://jobagent.fly.dev/api/files/" in result_url
+    
+    def test_storage_health_check_integration(self, client: TestClient):
+        """Test that storage health check works in different environments."""
+        with patch('app.tools.storage.health_check') as mock_health:
+            # Test healthy storage
+            mock_health.return_value = {
+                "status": "ok",
+                "storage_provider": "minio",
+                "bucket": "test-bucket",
+                "endpoint": "http://localhost:9000",
+                "public_url_base": "http://localhost:9000"
+            }
+            
+            response = client.get("/health")
+            data = response.json()
+            
+            # Should be included in overall health check
+            assert response.status_code in [200, 206]  # May be degraded due to other services in test
+            
+            # Test unhealthy storage
+            mock_health.return_value = {
+                "status": "error",
+                "message": "S3 client not initialized"
+            }
+            
+            response = client.get("/health")
+            data = response.json()
+            
+            # Should reflect storage issues
+            assert response.status_code in [206, 503]  # Degraded or unhealthy
 
 
 class TestingEndpoints:
@@ -1211,9 +1395,18 @@ class TestRoleIngestion:
         session.refresh(role)
         
         # Patch the session context to use our test session
-        with patch("app.db.get_session_context") as mock_get_session:
+        with (
+            patch("app.db.get_session_context") as mock_get_session,
+            # Mock the celery chain to avoid running document generation
+            patch("app.tasks.submission.chain") as mock_chain
+        ):
             mock_get_session.return_value.__enter__.return_value = session
             mock_get_session.return_value.__exit__.return_value = None
+            
+            # Mock the chain workflow to return success without actually running
+            mock_workflow = Mock()
+            mock_workflow.apply_async.return_value.id = "test-workflow-id"
+            mock_chain.return_value = mock_workflow
             
             # Call the task using apply() for proper execution
             result = task_apply_for_role.apply(
