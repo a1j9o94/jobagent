@@ -21,13 +21,12 @@ resume_agent = Agent(
         parallel_tool_calls=False,
         tool_choice="auto",
         max_retries=3,
-        timeout=30.0
+        timeout=180
     ),
     system_prompt="""You are an expert resume writer and career coach.
     Create compelling, ATS-optimized resumes and cover letters tailored to specific job postings.
-    Focus on quantifiable achievements and relevant keywords.""",
+    Focus on quantifiable achievements and relevant keywords. IMPORTANT: Resumes must be concise and formatted to fit on a single page. Cover letters should not include any placeholders. The documents will be submitted as-is.""",
 )
-
 
 def send_documents_ready_notification(application: Application, resume_url: str, cover_letter_url: str):
     """Send notification that documents are ready with links."""

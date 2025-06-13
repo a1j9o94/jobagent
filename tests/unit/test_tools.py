@@ -2,6 +2,8 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, UTC
+import tempfile
+import os
 from sqlmodel import select  # Added for SQLModel queries
 from app.models import (
     Profile,
@@ -807,3 +809,225 @@ class TestAsyncTools:
             session.refresh(application)
             assert "https://jobagent.fly.dev/api/files/" in application.resume_s3_url
             assert "https://jobagent.fly.dev/api/files/" in application.cover_letter_s3_url
+
+
+class TestPDFUtils:
+    """Test the PDF generation utilities."""
+    
+    def test_render_to_pdf_generates_single_page_pdf(self):
+        """Test that render_to_pdf generates a single-page PDF from markdown."""
+        from app.tools.pdf_utils import render_to_pdf
+        
+        # Sample markdown content that should fit on one page
+        markdown_content = """
+# John Doe
+Software Engineer
+
+## Experience
+- 5 years of Python development
+- FastAPI and web frameworks
+- Database design and optimization
+
+## Skills
+- Python, JavaScript, SQL
+- FastAPI, React, PostgreSQL
+- Docker, AWS, Git
+
+## Education
+**Bachelor of Computer Science**  
+University of Technology, 2019
+        """.strip()
+        
+        # Generate PDF bytes
+        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True, is_resume=True)
+        
+        # Verify it's a valid PDF by checking PDF header
+        assert pdf_bytes.startswith(b'%PDF'), "Generated content should be a valid PDF"
+        
+        # Verify it's not empty
+        assert len(pdf_bytes) > 100, "PDF should contain substantial content"
+        
+        # Save to temporary file and verify page count
+        temp_file = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+                temp_file.write(pdf_bytes)
+                temp_file_path = temp_file.name
+            
+            # Verify the file exists and has content
+            assert os.path.exists(temp_file_path), "Temporary PDF file should exist"
+            assert os.path.getsize(temp_file_path) > 0, "PDF file should not be empty"
+            
+            # Check page count using pypdf if available, otherwise use basic validation
+            try:
+                from pypdf import PdfReader
+                with open(temp_file_path, 'rb') as f:
+                    pdf_reader = PdfReader(f)
+                    page_count = len(pdf_reader.pages)
+                    assert page_count == 1, f"PDF should have exactly 1 page, but has {page_count}"
+            except ImportError:
+                # If pypdf is not available, do basic validation
+                # Check for PDF stream objects that might indicate multiple pages
+                with open(temp_file_path, 'rb') as f:
+                    content = f.read()
+                    # Look for page break indicators in PDF content
+                    page_indicators = content.count(b'/Type /Page')
+                    # Should have only one page object
+                    assert page_indicators <= 2, f"PDF appears to have multiple pages (found {page_indicators} page indicators)"
+            
+            # Read it back to ensure it's still valid
+            with open(temp_file_path, 'rb') as f:
+                read_back = f.read()
+                assert read_back == pdf_bytes, "File content should match original bytes"
+                assert read_back.startswith(b'%PDF'), "Read-back content should still be valid PDF"
+        
+        finally:
+            # Clean up the temporary file
+            if temp_file and os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
+    
+    def test_render_to_pdf_generates_valid_pdf(self):
+        """Test that render_to_pdf generates a valid PDF from markdown."""
+        from app.tools.pdf_utils import render_to_pdf
+        
+        # Sample markdown content that should fit on one page
+        markdown_content = """
+# John Doe
+Software Engineer
+
+## Experience
+- 5 years of Python development
+- FastAPI and web frameworks
+- Database design and optimization
+
+## Skills
+- Python, JavaScript, SQL
+- FastAPI, React, PostgreSQL
+- Docker, AWS, Git
+
+## Education
+**Bachelor of Computer Science**  
+University of Technology, 2019
+        """.strip()
+        
+        # Generate PDF bytes
+        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True, is_resume=True)
+        
+        # Verify it's a valid PDF by checking PDF header
+        assert pdf_bytes.startswith(b'%PDF'), "Generated content should be a valid PDF"
+        
+        # Verify it's not empty
+        assert len(pdf_bytes) > 100, "PDF should contain substantial content"
+        
+        # Save to temporary file to verify it can be written and read
+        temp_file = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+                temp_file.write(pdf_bytes)
+                temp_file_path = temp_file.name
+            
+            # Verify the file exists and has content
+            assert os.path.exists(temp_file_path), "Temporary PDF file should exist"
+            assert os.path.getsize(temp_file_path) > 0, "PDF file should not be empty"
+            
+            # Read it back to ensure it's still valid
+            with open(temp_file_path, 'rb') as f:
+                read_back = f.read()
+                assert read_back == pdf_bytes, "File content should match original bytes"
+                assert read_back.startswith(b'%PDF'), "Read-back content should still be valid PDF"
+        
+        finally:
+            # Clean up the temporary file
+            if temp_file and os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
+    
+    def test_render_to_pdf_single_page_optimization(self):
+        """Test that resume PDF generation uses single-page optimization."""
+        from app.tools.pdf_utils import render_to_pdf, markdown_to_html
+        
+        # Test the HTML conversion includes single-page CSS
+        markdown_content = "# Test Resume\n\nSome content here."
+        html_output = markdown_to_html(markdown_content)
+        
+        # Verify single-page optimization CSS is present
+        assert '@page' in html_output, "Should include @page CSS for page control"
+        assert 'overflow: hidden' in html_output, "Should include overflow hidden for single page"
+        assert 'A4' in html_output, "Should specify A4 page size"
+        assert 'margin: 0.5in' in html_output, "Should include compact margins"
+        
+        # Test that PDF generation completes without error for resume
+        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True, is_resume=True)
+        assert pdf_bytes.startswith(b'%PDF'), "Should generate valid PDF"
+    
+    def test_render_to_pdf_non_resume_content(self):
+        """Test PDF generation for non-resume content (like cover letters)."""
+        from app.tools.pdf_utils import render_to_pdf
+        
+        markdown_content = """
+# Cover Letter
+
+Dear Hiring Manager,
+
+I am writing to express my interest in the Software Engineer position at your company.
+
+Best regards,
+John Doe
+        """.strip()
+        
+        # Generate PDF for non-resume content
+        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True, is_resume=False)
+        
+        # Verify it's a valid PDF
+        assert pdf_bytes.startswith(b'%PDF'), "Should generate valid PDF for cover letter"
+        assert len(pdf_bytes) > 100, "PDF should contain substantial content"
+    
+    def test_render_to_pdf_html_input(self):
+        """Test PDF generation from HTML input instead of markdown."""
+        from app.tools.pdf_utils import render_to_pdf
+        
+        html_content = """
+        <html>
+        <body>
+            <h1>Test Document</h1>
+            <p>This is a test HTML document.</p>
+        </body>
+        </html>
+        """
+        
+        # Generate PDF from HTML
+        pdf_bytes = render_to_pdf(html_content, is_markdown=False)
+        
+        # Verify it's a valid PDF
+        assert pdf_bytes.startswith(b'%PDF'), "Should generate valid PDF from HTML"
+        assert len(pdf_bytes) > 100, "PDF should contain substantial content"
+    
+    def test_markdown_to_html_output_structure(self):
+        """Test that markdown_to_html produces well-formed HTML."""
+        from app.tools.pdf_utils import markdown_to_html
+        
+        markdown_content = """
+# Main Heading
+## Sub Heading
+
+- List item 1  
+- List item 2
+
+**Bold text** and *italic text*.
+        """.strip()
+        
+        html_output = markdown_to_html(markdown_content)
+        
+        # Verify HTML structure (strip whitespace for comparison)
+        html_stripped = html_output.strip()
+        assert html_stripped.startswith('<!DOCTYPE html>'), "Should be a complete HTML document"
+        assert '<html>' in html_output and '</html>' in html_output, "Should have html tags"
+        assert '<head>' in html_output and '</head>' in html_output, "Should have head section"
+        assert '<body>' in html_output and '</body>' in html_output, "Should have body section"
+        assert '<style>' in html_output and '</style>' in html_output, "Should include CSS styles"
+        
+        # Verify markdown was converted
+        assert '<h1>' in html_output, "Should convert # to h1"
+        assert '<h2>' in html_output, "Should convert ## to h2"
+        assert '<ul>' in html_output and '<li>' in html_output, "Should convert lists"
+        assert '<strong>' in html_output, "Should convert **bold**"
+        assert '<em>' in html_output, "Should convert *italic*"

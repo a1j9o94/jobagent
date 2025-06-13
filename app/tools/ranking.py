@@ -16,7 +16,7 @@ ranking_agent = Agent(
         parallel_tool_calls=False,
         tool_choice="auto",
         max_retries=3,
-        timeout=30.0
+        timeout=180
     ),
     system_prompt="""You are a career advisor evaluating job role matches.
     Analyze the job description and candidate profile to provide an accurate fit score.

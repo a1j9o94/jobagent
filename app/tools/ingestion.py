@@ -23,7 +23,7 @@ role_extraction_agent = Agent(
         parallel_tool_calls=False,
         tool_choice="auto",
         max_retries=3,
-        timeout=60.0
+        timeout=180
     ),
     system_prompt="""
     You are an expert at extracting structured information from job postings.

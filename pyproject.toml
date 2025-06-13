@@ -50,6 +50,7 @@ dependencies = [
     "fastapi-proxiedheadersmiddleware>=0.9.0",
     "firecrawl-py>=2.8.0",
     "pydantic-ai>=0.0.17",
+    "pypdf>=4.0.0",
 ]
 
 [project.urls]

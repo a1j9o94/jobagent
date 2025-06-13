@@ -6,13 +6,12 @@ from sqlmodel import Session, select
 from app.db import get_session
 from app.models import Application, ApplicationStatus, Role
 
-from .shared import app, get_api_key
+from .shared import app 
 
 
 @app.get(
     "/applications",
     summary="Get application status",
-    dependencies=[Depends(get_api_key)],
     tags=["Applications"],
 )
 async def get_applications(
