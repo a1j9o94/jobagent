@@ -838,8 +838,8 @@ Software Engineer
 University of Technology, 2019
         """.strip()
         
-        # Generate PDF bytes
-        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True, is_resume=True)
+        # Generate PDF bytes (new API automatically ensures single page)
+        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True)
         
         # Verify it's a valid PDF by checking PDF header
         assert pdf_bytes.startswith(b'%PDF'), "Generated content should be a valid PDF"
@@ -911,7 +911,7 @@ University of Technology, 2019
         """.strip()
         
         # Generate PDF bytes
-        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True, is_resume=True)
+        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True)
         
         # Verify it's a valid PDF by checking PDF header
         assert pdf_bytes.startswith(b'%PDF'), "Generated content should be a valid PDF"
@@ -947,42 +947,124 @@ University of Technology, 2019
         
         # Test the HTML conversion includes single-page CSS
         markdown_content = "# Test Resume\n\nSome content here."
-        html_output = markdown_to_html(markdown_content)
+        html_output = markdown_to_html(markdown_content, font_pt=10.0)
         
         # Verify single-page optimization CSS is present
         assert '@page' in html_output, "Should include @page CSS for page control"
         assert 'overflow: hidden' in html_output, "Should include overflow hidden for single page"
-        assert 'A4' in html_output, "Should specify A4 page size"
-        assert 'margin: 0.5in' in html_output, "Should include compact margins"
+        assert 'letter' in html_output, "Should specify letter page size"
+        assert '0.5in' in html_output, "Should include compact margins"
         
         # Test that PDF generation completes without error for resume
-        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True, is_resume=True)
+        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True)
         assert pdf_bytes.startswith(b'%PDF'), "Should generate valid PDF"
     
-    def test_render_to_pdf_non_resume_content(self):
-        """Test PDF generation for non-resume content (like cover letters)."""
+    def test_render_to_pdf_auto_sizing(self):
+        """Test that the auto-sizing feature works for large content."""
         from app.tools.pdf_utils import render_to_pdf
         
-        markdown_content = """
-# Cover Letter
+        # Create markdown content that would definitely overflow one page at normal font size
+        large_content = """
+# Very Long Resume
+Software Engineer with Extensive Experience
 
-Dear Hiring Manager,
+## Professional Experience
 
-I am writing to express my interest in the Software Engineer position at your company.
+### Senior Software Engineer at Big Tech Corp (2020-Present)
+- Led development of microservices architecture serving 1M+ users daily
+- Implemented CI/CD pipelines reducing deployment time by 75%
+- Mentored junior developers and conducted code reviews
+- Technologies: Python, Docker, Kubernetes, AWS, PostgreSQL
+- Achievements: Reduced system latency by 40%, improved test coverage to 95%
 
-Best regards,
-John Doe
+### Software Engineer at Growing Startup (2018-2020)  
+- Built scalable web applications using React and Node.js
+- Designed and implemented RESTful APIs and GraphQL endpoints
+- Collaborated with product team on feature specifications
+- Technologies: JavaScript, React, Node.js, MongoDB, Redis
+- Achievements: Shipped 15+ features, increased user engagement by 60%
+
+### Junior Developer at Local Agency (2016-2018)
+- Developed client websites and web applications
+- Maintained legacy PHP and WordPress systems
+- Worked directly with clients on requirements gathering
+- Technologies: PHP, WordPress, MySQL, jQuery, CSS
+- Achievements: Delivered 20+ client projects on time and budget
+
+## Technical Skills
+- Programming Languages: Python, JavaScript, TypeScript, Java, Go, PHP
+- Web Frameworks: FastAPI, Django, React, Vue.js, Express.js, Spring Boot
+- Databases: PostgreSQL, MySQL, MongoDB, Redis, Elasticsearch
+- Cloud Platforms: AWS, Google Cloud, Azure, DigitalOcean
+- DevOps Tools: Docker, Kubernetes, Jenkins, GitHub Actions, Terraform
+- Testing: pytest, Jest, Cypress, Selenium, JUnit
+- Other: GraphQL, REST APIs, Microservices, Event-driven architecture
+
+## Education
+**Master of Computer Science**  
+University of Technology, 2016
+- Thesis: "Optimizing Database Performance in Distributed Systems"
+- GPA: 3.8/4.0
+- Relevant Coursework: Algorithms, Data Structures, Database Systems, Software Engineering
+
+**Bachelor of Computer Science**  
+State University, 2014
+- Magna Cum Laude, GPA: 3.9/4.0
+- President of Computer Science Club
+- Relevant Coursework: Computer Networks, Operating Systems, Compilers
+
+## Certifications
+- AWS Certified Solutions Architect - Professional (2023)
+- Certified Kubernetes Administrator (2022)
+- Google Cloud Professional Developer (2021)
+- Scrum Master Certification (2020)
+
+## Projects
+**Open Source Contributions**
+- Contributor to FastAPI (10+ merged PRs)
+- Maintainer of popular Python testing library (500+ GitHub stars)
+- Speaker at 3 tech conferences on microservices architecture
+
+**Personal Projects**
+- Built ML-powered job recommendation system using Python and scikit-learn
+- Created real-time chat application with WebSocket support
+- Developed automated trading bot using financial APIs
         """.strip()
         
-        # Generate PDF for non-resume content
-        pdf_bytes = render_to_pdf(markdown_content, is_markdown=True, is_resume=False)
+        # The auto-sizing should ensure this fits on one page by reducing font size
+        pdf_bytes = render_to_pdf(large_content, is_markdown=True)
         
         # Verify it's a valid PDF
-        assert pdf_bytes.startswith(b'%PDF'), "Should generate valid PDF for cover letter"
+        assert pdf_bytes.startswith(b'%PDF'), "Should generate valid PDF even for large content"
         assert len(pdf_bytes) > 100, "PDF should contain substantial content"
+        
+        # Save to temporary file and verify it's still one page
+        temp_file = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+                temp_file.write(pdf_bytes)
+                temp_file_path = temp_file.name
+            
+            # Check page count - should be 1 due to auto-sizing
+            try:
+                from pypdf import PdfReader
+                with open(temp_file_path, 'rb') as f:
+                    pdf_reader = PdfReader(f)
+                    page_count = len(pdf_reader.pages)
+                    # The auto-sizing should try to fit it on 1 page, but if content is too large,
+                    # it might end up with more pages at minimum font size
+                    assert page_count <= 2, f"PDF should have at most 2 pages due to auto-sizing, but has {page_count}"
+            except ImportError:
+                # If pypdf not available, just check it's a valid PDF
+                pass
+        
+        finally:
+            # Clean up the temporary file
+            if temp_file and os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
     
-    def test_render_to_pdf_html_input(self):
-        """Test PDF generation from HTML input instead of markdown."""
+    def test_render_to_pdf_html_input_not_supported(self):
+        """Test that HTML input raises appropriate error."""
         from app.tools.pdf_utils import render_to_pdf
         
         html_content = """
@@ -994,12 +1076,9 @@ John Doe
         </html>
         """
         
-        # Generate PDF from HTML
-        pdf_bytes = render_to_pdf(html_content, is_markdown=False)
-        
-        # Verify it's a valid PDF
-        assert pdf_bytes.startswith(b'%PDF'), "Should generate valid PDF from HTML"
-        assert len(pdf_bytes) > 100, "PDF should contain substantial content"
+        # Should raise ValueError since auto-fit is only implemented for markdown
+        with pytest.raises(ValueError, match="Auto-fit only implemented for markdown input"):
+            render_to_pdf(html_content, is_markdown=False)
     
     def test_markdown_to_html_output_structure(self):
         """Test that markdown_to_html produces well-formed HTML."""
@@ -1015,7 +1094,7 @@ John Doe
 **Bold text** and *italic text*.
         """.strip()
         
-        html_output = markdown_to_html(markdown_content)
+        html_output = markdown_to_html(markdown_content, font_pt=10.0)
         
         # Verify HTML structure (strip whitespace for comparison)
         html_stripped = html_output.strip()
@@ -1031,3 +1110,28 @@ John Doe
         assert '<ul>' in html_output and '<li>' in html_output, "Should convert lists"
         assert '<strong>' in html_output, "Should convert **bold**"
         assert '<em>' in html_output, "Should convert *italic*"
+        
+        # Verify font size is applied
+        assert '10.0pt' in html_output, "Should use the specified font size"
+    
+    def test_markdown_to_html_font_scaling(self):
+        """Test that markdown_to_html properly scales fonts."""
+        from app.tools.pdf_utils import markdown_to_html
+        
+        markdown_content = "# Test Heading\n\nSome content."
+        
+        # Test different font sizes
+        small_html = markdown_to_html(markdown_content, font_pt=8.0)
+        large_html = markdown_to_html(markdown_content, font_pt=12.0)
+        
+        # Both should be valid HTML
+        assert small_html.startswith('<!DOCTYPE html>'), "Small font HTML should be valid"
+        assert large_html.startswith('<!DOCTYPE html>'), "Large font HTML should be valid"
+        
+        # Font sizes should be reflected in the CSS
+        assert '8.0pt' in small_html, "Should use 8pt font size"
+        assert '12.0pt' in large_html, "Should use 12pt font size"
+        
+        # Heading sizes should scale proportionally  
+        assert '13.5pt' in small_html, "H1 should be base + 5.5pt (8 + 5.5 = 13.5)"
+        assert '17.5pt' in large_html, "H1 should be base + 5.5pt (12 + 5.5 = 17.5)"

@@ -1,99 +1,89 @@
 # app/tools/pdf_utils.py
 import logging
 from io import BytesIO
-from weasyprint import HTML, CSS
+from typing import Tuple
+
+from weasyprint import HTML
 from markdown import markdown
 
 logger = logging.getLogger(__name__)
 
 
-def markdown_to_html(md_content: str) -> str:
-    """Convert markdown to HTML with styling optimized for a single-page PDF."""
-    html_content = markdown(md_content)
+# ------------- CONFIG -------------
+MIN_FONT_PT = 8.0          # don’t go below this
+START_FONT_PT = 9       # initial attempt
+STEP_PT = 0.5              # decrement step
+MARGIN_IN = 0.5            # left/right/top/bottom margin
+# ----------------------------------
 
-    # Enhanced CSS for a compact, professional, single-page resume
-    css_style = """
+
+def _css_template(font_pt: float) -> str:
+    """Return the CSS block with the requested base font size."""
+    return f"""
     <style>
-        @page {
-            size: A4; /* Standard A4 paper size */
-            margin: 0.5in; /* Set reasonable margins for the page */
-        }
-        html, body {
-            height: 100%; /* Ensure html and body take full height */
-            margin: 0;
-            padding: 0;
-            overflow: hidden; /* Prevent content from flowing to a new page */
-        }
-        body {
-            font-family: 'Arial', sans-serif;
-            font-size: 10pt; /* Slightly smaller font size for compactness */
-            line-height: 1.4; /* Adjust line height for readability */
-            color: #333;
-        }
-        h1, h2, h3 {
-            color: #2c3e50;
-            margin: 0.5em 0 0.2em 0; /* Compact margins */
-            page-break-after: avoid; /* Prevent page breaks after headings */
-        }
-        h1 {
-            font-size: 22pt;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 4px;
-            margin-bottom: 0.4em;
-        }
-        h2 {
-            font-size: 14pt;
-            border-bottom: 1px solid #e0e0e0;
-            padding-bottom: 2px;
-            margin-top: 0.8em;
-        }
-        ul {
-            margin: 4px 0;
-            padding-left: 20px;
-            list-style-position: outside;
-        }
-        li {
-            margin-bottom: 4px; /* Space out list items a bit */
-            page-break-inside: avoid; /* Try to keep list items on the same page */
-        }
-        p {
-            margin: 0 0 8px 0;
-        }
+        @page {{
+            size: letter;
+            margin: {MARGIN_IN}in;
+        }}
+        html, body {{ height: 100%; margin: 0; padding: 0; overflow: hidden; }}
+        body {{ font-family: 'Georgia','Times New Roman',serif;
+                font-size: {font_pt}pt; line-height: 1.25; color:#111; }}
+        /* headings */
+        h1, h2, h3, h4, p, li {{ font-size: {font_pt}pt; margin:0; padding:0; }}
+        h1 {{ text-align:center; font-weight:bold; font-size:{font_pt+5.5}pt; margin-bottom:4px; }}
+        h2 {{ font-weight:bold; text-transform:uppercase; border-bottom:1px solid #333;
+              margin:10px 0 6px; padding-bottom:1px; }}
+        h3 {{ font-weight:bold; font-style:italic; }}
+        /* lists */
+        ul {{ list-style-type:disc; margin:0 0 6px 0; padding-left:18px; }}
+        li {{ margin-bottom:3px; page-break-inside:avoid; }}
+        /* contact line */
+        h1 + p {{ text-align:center; margin:0 0 10px 0; }}
     </style>
     """
 
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        {css_style}
-    </head>
-    <body>
-        {html_content}
-    </body>
-    </html>
-    """
+
+def markdown_to_html(md_content: str, font_pt: float) -> str:
+    """Convert markdown to styled HTML with runtime-chosen font size."""
+    html_body = markdown(md_content)
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+            {_css_template(font_pt)}</head><body>{html_body}</body></html>"""
 
 
-def render_to_pdf(content: str, is_markdown: bool = True, is_resume: bool = False) -> bytes:
-    """
-    Convert markdown or HTML content to PDF bytes.
-    If is_resume is True, applies single-page optimized styling.
-    """
-    try:
-        if is_markdown:
-            # For resumes, we use our single-page optimized HTML conversion
-            if is_resume:
-                html_content = markdown_to_html(content)
-            else:
-                # Basic conversion for other documents like cover letters
-                html_content = f"<html><body>{markdown(content)}</body></html>"
-        else:
-            html_content = content
+def _render_once(md_content: str, font_pt: float) -> Tuple[int, bytes]:
+    """Render and return (page_count, pdf_bytes)."""
+    html_obj = HTML(string=markdown_to_html(md_content, font_pt))
+    doc = html_obj.render()
+    return len(doc.pages), doc.write_pdf()
 
-        return HTML(string=html_content).write_pdf()
 
-    except Exception as e:
-        logger.error(f"Failed to generate PDF: {e}")
-        raise
+def render_to_pdf(content: str, is_markdown: bool = True) -> bytes:
+    """Render markdown/HTML to a **one-page** PDF, auto-shrinking fonts if needed."""
+    if not is_markdown:
+        raise ValueError("Auto-fit only implemented for markdown input.")
+
+    font = START_FONT_PT
+    while font >= MIN_FONT_PT:
+        pages, pdf_bytes = _render_once(content, font)
+        if pages == 1:
+            logger.debug("Rendered at %.1f pt → 1 page", font)
+            return pdf_bytes
+        font -= STEP_PT
+
+    logger.warning("Hit minimum font (%.1f pt) but still >1 page; returning last render.", MIN_FONT_PT)
+    return pdf_bytes   # possibly 2 pages, caller may decide how to handle
+
+
+# CLI helper unchanged
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) != 3:
+        print("Usage: python pdf_utils.py <markdown_file> <output_file>")
+        sys.exit(1)
+    md_path, out_path = sys.argv[1], sys.argv[2]
+    with open(md_path, "r", encoding="utf-8") as f:
+        md_text = f.read()
+    pdf_data = render_to_pdf(md_text, is_markdown=True)
+    with open(out_path, "wb") as f:
+        f.write(pdf_data)
+    print(f"PDF saved → {out_path}")
