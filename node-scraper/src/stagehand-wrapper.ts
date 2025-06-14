@@ -1,11 +1,14 @@
 import { Stagehand } from '@browserbasehq/stagehand';
 import { z } from 'zod';
 import { logger } from './utils/logger';
-import { 
+import {
     StagehandConfig,
-    ApplicationResult
+    ApplicationResult,
+    EnhancedUserData,
+    QuestionResponse
 } from './types/stagehand';
 import { JobApplicationTask } from './types/tasks';
+import { IntelligentQuestionHandler } from './intelligent-question-handler';
 
 interface JobCredentials {
     username: string;
@@ -166,7 +169,13 @@ export class StagehandWrapper {
             }
 
             // Fill out the application form
-            const formResult = await this.fillApplicationForm(task.user_data, task.custom_answers);
+            const questionHandler = new IntelligentQuestionHandler(task.user_data as EnhancedUserData);
+
+            const formResult = await this.fillApplicationForm(
+                task.user_data as EnhancedUserData,
+                questionHandler,
+                task.custom_answers
+            );
             
             if (formResult.needsApproval) {
                 return {
@@ -266,7 +275,11 @@ export class StagehandWrapper {
         }
     }
 
-    private async fillApplicationForm(userData: JobApplicationData, customAnswers?: Record<string, any>): Promise<{ success: boolean; error?: string; needsApproval?: boolean; question?: string }> {
+    private async fillApplicationForm(
+        userData: EnhancedUserData,
+        handler: IntelligentQuestionHandler,
+        customAnswers?: Record<string, any>
+    ): Promise<{ success: boolean; error?: string; needsApproval?: boolean; question?: string }> {
         if (!this.stagehand) throw new Error('Stagehand not initialized');
 
         try {
@@ -295,14 +308,19 @@ export class StagehandWrapper {
                 logger.info('File upload detected but not implemented yet');
             }
 
-            // Check for questions that need approval
+            // Handle non-standard questions using the intelligent question handler
             const unknownQuestions = await this.getUnknownQuestions();
-            if (unknownQuestions.length > 0) {
-                return {
-                    success: false,
-                    needsApproval: true,
-                    question: unknownQuestions[0]
-                };
+            for (const question of unknownQuestions) {
+                const result: QuestionResponse = await handler.analyzeAndRespondToQuestion(question);
+                if (result.success && result.response && result.confidence !== 'low') {
+                    await this.stagehand.page.act(`answer the question "${question}" with "${result.response}"`);
+                } else {
+                    return {
+                        success: false,
+                        needsApproval: true,
+                        question
+                    };
+                }
             }
 
             // Fill custom answers if provided

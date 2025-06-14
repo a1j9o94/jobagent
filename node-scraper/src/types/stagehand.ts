@@ -54,4 +54,28 @@ export interface AutomationStep {
     error?: string;
     duration_ms: number;
     screenshot_url?: string;
-} 
+}
+
+export interface QuestionAnalysis {
+    type: 'experience' | 'preference' | 'motivation' | 'behavioral' | 'unknown';
+}
+
+export interface QuestionResponse {
+    success: boolean;
+    response?: string;
+    confidence: 'high' | 'medium' | 'low';
+    needsApproval?: boolean;
+    reasoning?: string;
+}
+
+export interface EnhancedUserData {
+    name: string;
+    email: string;
+    phone: string;
+    years_experience?: number;
+    preferences?: {
+        preferred_salary?: string;
+        [key: string]: any;
+    };
+    [key: string]: any;
+}
