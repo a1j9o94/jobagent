@@ -25,7 +25,7 @@ resume_agent = Agent(
     ),
     system_prompt="""You are an expert resume writer and career coach.
     Create compelling, ATS-optimized resumes and cover letters tailored to specific job postings.
-    Focus on quantifiable achievements and relevant keywords. IMPORTANT: Resumes must be concise and formatted to fit on a single page. Cover letters should not include any placeholders. The documents will be submitted as-is.""",
+    Focus on quantifiable achievements and relevant keywords. IMPORTANT: Resumes must be concise and formatted to fit on a single page.""",
 )
 
 def send_documents_ready_notification(application: Application, resume_url: str, cover_letter_url: str):
@@ -62,29 +62,137 @@ async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
 
         try:
 
+
             # Generate documents using LLM
             prompt = f"""
-            Create a resume and cover letter for this application:
-            
-            Job: {role.title} at {role.company.name}
-            Description: {role.description}
-            Location: {role.location or 'Not specified'}
-            Requirements: {role.requirements or 'Not specified'}
-            Salary Range: {role.salary_range or 'Not specified'}
-            Job URL: {role.posting_url}
+            ## Task
+            Create a tailored resume and cover letter for this specific job application:
+
+            **Job Details:**
+            - Role: {role.title} at {role.company.name}
+            - Description: {role.description}
+            - Location: {role.location or 'Not specified'}
+            - Requirements: {role.requirements or 'Not specified'}
+            - Salary Range: {role.salary_range or 'Not specified'}
+            - Job URL: {role.posting_url}
             {f'Role Ranking Score: {role.rank_score}/1.0' if role.rank_score else ''}
             {f'Why this role fits: {role.rank_rationale}' if role.rank_rationale else ''}
             {f'Required Skills: {", ".join([skill.name for skill in role.skills])}' if role.skills else ''}
-            
-            Candidate: {profile.headline}
-            Summary: {profile.summary}
-            Applicant preferences: {profile.preferences}
-            
-            Make the resume ATS-friendly and the cover letter compelling but concise.
-            Focus on the specific requirements and skills mentioned above.
-            The resume should be concise and formatted to fit on a single page. You have lots of information about the candidate, so only include the most relevant information for the job.
-            The cover letter should not include any placeholders.
-            The documents will be submitted as-is.
+
+            **Candidate Profile:**
+            - Name: {profile.headline}
+            - Summary: {profile.summary}
+            - Preferences: {profile.preferences}
+
+            ## Resume Requirements
+
+            ### Content Strategy
+            1. **Skills Alignment**: Carefully match the candidate's experience to the job requirements. Prioritize experiences that directly relate to the required skills and responsibilities.
+
+            2. **Quantified Impact**: Extract specific metrics, dollar amounts, percentages, and scale indicators from the candidate's full bio. Examples:
+            - Revenue/pipeline numbers ($6B transformation, $300M pipeline, $100M ARR)
+            - Percentage improvements (15% YoY growth, 80% to 100% NRR improvement)
+            - Scale indicators (Fortune 500 clients, $150B company, 10+ M&A transactions)
+            - Team/project sizes (80+ sellers, 7-person team, 464 learners)
+
+            3. **Technical Depth**: When relevant to the role, include specific technologies, frameworks, and tools from the candidate's background. Don't just list them—show how they were applied.
+
+            4. **Achievement Focus**: Transform responsibilities into achievements. Instead of "Managed sales pipeline," write "Managed $300M sales pipeline, contributing to ~$100M ARR through weekly performance tracking and optimization."
+
+            ### Formatting Guidelines
+            - **ATS-Friendly**: Use standard section headers, bullet points, and simple formatting
+            - **Single Page**: Prioritize the most relevant and impressive experiences
+            - **Information Hierarchy**: Lead with the most relevant experiences for this specific role
+            - **Metrics Prominence**: Lead bullet points with quantified results when possible
+
+            ### Content Selection Priority
+            1. **Direct Role Matches**: Experiences that directly align with the job description
+            2. **Transferable Skills**: Adjacent experiences that demonstrate relevant capabilities
+            3. **Leadership/Impact**: Instances showing progression, leadership, or significant business impact
+            4. **Technical Skills**: Relevant certifications, tools, and technical competencies
+
+            ## Cover Letter Requirements
+
+            ### Content Strategy
+            1. **Compelling Opening**: Connect the candidate's background directly to the company's needs
+            2. **Specific Value Proposition**: Highlight 2-3 key achievements that directly relate to the role requirements
+            3. **Company Research**: Reference specific aspects of the company, role, or industry that resonate with the candidate's experience
+            4. **Quantified Impact**: Include 1-2 specific metrics that demonstrate capability
+
+            ### Formatting Guidelines
+            - **Professional Header**: Include full contact information
+            - **Proper Addressing**: Use "Dear Hiring Manager" or "Dear [Company Name] Team"
+            - **Concise Length**: 3-4 paragraphs, ~300-400 words
+            - **Strong Close**: Express enthusiasm and next steps
+            - **No Placeholders**: Complete, ready-to-submit document
+
+            ## Key Instructions
+            - **Mine the Full Bio**: The candidate summary contains extensive detail—use it to find specific examples, metrics, and achievements
+            - **Tailor Everything**: Every bullet point should feel specifically crafted for this role
+            - **Show Don't Tell**: Instead of "strong leadership skills," describe "Led 7-person intern team that built recruiting platform adopted company-wide"
+            - **Prioritize Relevance**: If space is limited, include the most job-relevant information first
+            - **Maintain Authenticity**: All content should be truthful and directly supported by the candidate's actual experience
+
+            ## Output Format
+            Provide both documents in clean markdown format that will be converted to PDF for submission. Use proper markdown formatting including:
+            - Headers (#, ##, ###) for document structure
+            - **Bold** for emphasis on names, companies, and key achievements
+            - *Italics* for dates, locations, and role titles
+            - Bullet points (-) for experience details
+            - Proper spacing and line breaks for professional PDF rendering
+
+            The documents should be formatted for optimal PDF conversion while maintaining professional appearance and readability.
+
+            ## Resume Example Format
+
+            ```markdown
+            # Adrian Obleton
+            10727 Domain Dr, Austin, TX 78758 | obletonadrian@gmail.com | (706) 664-1258
+
+            ## Experience
+
+            ### Consultant → Senior Consultant, Bain & Company | Atlanta, GA & Austin, TX
+            *2017-2025*
+
+            * Led enterprise transformation initiatives for Fortune 500 clients across industrials, healthcare, and technology sectors.
+            * Orchestrated GTM transformation for a $6B global IT services business - including sales process redesign, pricing overhaul, and renewal strategy - driving ~15% YoY growth across recurring contracts.
+            * Designed and implemented enterprise-wide tracking systems with BU and finance leaders to manage transformation KPIs, reversing a 10% revenue decline to 1% growth for a major OEM.
+            * Stood up a strategic PMO for a $150B medical products company to drive a multiyear cost and margin improvement program across procurement, ops, and commercial functions.
+
+            ### Associate Consultant, Bain & Company | Atlanta, GA
+            *2017-2019*
+
+            * Served clients across private equity, education, and technology industries.
+            * Developed growth strategy and detailed financial plan to expand a 5,000-student charter school system to 10,000.
+            * Conducted commercial due diligence for 6 M&A transactions worth $70B+, building industry forecast models, running surveys, and interviewing industry experts.
+            ```
+
+            ## Cover Letter Example Format
+
+            ```markdown
+            Adrian Obleton
+            Austin, TX
+            obletonadrian@gmail.com
+            +1 706-664-1258
+
+            Hiring Manager
+            Google
+
+            Dear Hiring Manager,
+
+            I am writing to express my strong interest in the Senior Business Operations and Planning Lead position within Google's Trust and Safety organization. With an MBA from Harvard and over eight years of strategic planning and operations experience, including pivotal roles at Bain & Company and Turbonomic, I am excited by the opportunity to contribute to Google's mission of building trust in technology.
+
+            At Bain & Company, I successfully led transformation projects for global firms, achieving significant KPI-driven results. My experience managing executive stakeholders and implementing strategic initiatives that align with organizational goals has been proven in fast-paced environments. As the Strategy & Sales Operations Manager at Turbonomic, I played a key role in managing a $300M pipeline, leading to improved sales velocity and client retention by utilizing data-driven insights.
+
+            In my entrepreneurial ventures, I honed my ability to navigate dynamic and challenging environments, demonstrating my capacity to drive operational excellence and innovation. I am particularly drawn to this role at Google due to its alignment with my skills in management consulting, business strategy, and trust and safety frameworks.
+
+            I am eager to bring my experience and skills to Google's Trust and Safety team to help further its mission of delivering safe and trusted user experiences worldwide.
+
+            Thank you for considering my application.
+
+            Sincerely,
+            Adrian Obleton
+            ```
             """
 
             # Try with retry logic for pydantic AI agent
