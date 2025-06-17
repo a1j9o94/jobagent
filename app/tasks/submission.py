@@ -43,21 +43,67 @@ def task_submit_application_queue(self, documents_result=None, application_id: i
             role = application.role
             profile = application.profile
 
-            # Get user preferences for form data
+            # Get all user preferences for comprehensive form data
             preferences = {pref.key: pref.value for pref in profile.preferences}
 
-            # Prepare user data (now including the generated document URLs)
+            # Prepare comprehensive user data for enhanced StagehandWrapper
             user_data = {
+                # Basic identity
                 "name": f"{preferences.get('first_name', '')} {preferences.get('last_name', '')}".strip(),
                 "first_name": preferences.get("first_name", ""),
                 "last_name": preferences.get("last_name", ""),
                 "email": preferences.get("email", ""),
                 "phone": preferences.get("phone", ""),
+                
+                # Generated documents
                 "resume_url": application.resume_s3_url,
                 "cover_letter_url": application.cover_letter_s3_url,
+                
+                # Contact and social links
                 "linkedin_url": preferences.get("linkedin_url", ""),
                 "github_url": preferences.get("github_url", ""),
                 "portfolio_url": preferences.get("portfolio_url", ""),
+                "website": preferences.get("website", "") or preferences.get("personal_website", ""),
+                
+                # Location information
+                "address": preferences.get("address", ""),
+                "city": preferences.get("city", ""),
+                "state": preferences.get("state", ""),
+                "zip_code": preferences.get("zip_code", "") or preferences.get("postal_code", ""),
+                "country": preferences.get("country", ""),
+                
+                # Professional information for intelligent responses
+                "current_role": preferences.get("current_role", "") or preferences.get("current_title", ""),
+                "experience_years": self._parse_experience_years(preferences.get("experience_years", "")),
+                "education": preferences.get("education", "") or preferences.get("degree", ""),
+                "skills": self._parse_skills(preferences.get("skills", "")),
+                
+                # Work preferences for intelligent answers
+                "preferred_work_arrangement": preferences.get("work_arrangement", "") or preferences.get("remote_preference", ""),
+                "availability": preferences.get("availability", "") or preferences.get("start_date", ""),
+                "salary_expectation": preferences.get("salary_expectation", "") or preferences.get("desired_salary", ""),
+                
+                # Additional profile context
+                "summary": profile.summary if profile.summary else "",
+                "headline": profile.headline if profile.headline else "",
+                
+                # Pass through ALL preferences as additional context
+                # This ensures any custom fields are available to the AI
+                **{f"pref_{k}": v for k, v in preferences.items() if k not in [
+                    'first_name', 'last_name', 'email', 'phone', 'linkedin_url', 
+                    'github_url', 'portfolio_url', 'website', 'personal_website',
+                    'address', 'city', 'state', 'zip_code', 'postal_code', 'country',
+                    'current_role', 'current_title', 'experience_years', 'education',
+                    'degree', 'skills', 'work_arrangement', 'remote_preference',
+                    'availability', 'start_date', 'salary_expectation', 'desired_salary'
+                ]}
+            }
+            
+            # Add AI instructions based on role and profile
+            ai_instructions = {
+                "tone": "professional",
+                "focus_areas": self._extract_focus_areas(role, preferences),
+                "avoid_topics": []  # Could be configured per user
             }
 
             # Get credentials for the site
@@ -74,7 +120,7 @@ def task_submit_application_queue(self, documents_result=None, application_id: i
             application.status = ApplicationStatus.SUBMITTING
             session.commit()
 
-            # Publish task to Node.js service via Redis queue
+            # Publish task to Node.js service via Redis queue with enhanced data
             task_id = queue_manager.publish_job_application_task(
                 job_id=role.id,
                 application_id=application.id,
@@ -83,7 +129,8 @@ def task_submit_application_queue(self, documents_result=None, application_id: i
                 title=role.title,
                 user_data=user_data,
                 credentials=credentials,
-                custom_answers=application.custom_answers
+                custom_answers=application.custom_answers,
+                ai_instructions=ai_instructions
             )
 
             # Store the queue task ID for tracking
@@ -205,4 +252,58 @@ def task_generate_and_submit_application(self, application_id: int):
         if self.request.retries < self.max_retries:
             countdown = 60 * (self.request.retries + 1)
             raise self.retry(countdown=countdown, exc=e)
-        return {"status": "error", "message": str(e), "application_id": application_id} 
+        return {"status": "error", "message": str(e), "application_id": application_id}
+
+
+    def _parse_experience_years(self, experience_str: str) -> int:
+        """Parse experience years from various string formats."""
+        if not experience_str:
+            return 0
+        
+        import re
+        # Try to extract number from strings like "5 years", "3+ years", "5-7 years"
+        match = re.search(r'(\d+)', str(experience_str))
+        if match:
+            return int(match.group(1))
+        
+        return 0
+
+    def _parse_skills(self, skills_str: str) -> list:
+        """Parse skills from various string formats."""
+        if not skills_str:
+            return []
+        
+        # Handle different separators: comma, semicolon, pipe, newline
+        import re
+        skills = re.split(r'[,;\|\n]+', str(skills_str))
+        return [skill.strip() for skill in skills if skill.strip()]
+
+    def _extract_focus_areas(self, role, preferences: dict) -> list:
+        """Extract focus areas based on role and user preferences."""
+        focus_areas = []
+        
+        # Extract from role title and description
+        if hasattr(role, 'title') and role.title:
+            title_lower = role.title.lower()
+            if any(word in title_lower for word in ['senior', 'lead', 'principal']):
+                focus_areas.append('leadership experience')
+            if any(word in title_lower for word in ['engineer', 'developer', 'technical']):
+                focus_areas.append('technical skills')
+            if any(word in title_lower for word in ['manager', 'director']):
+                focus_areas.append('management experience')
+        
+        # Extract from user preferences
+        current_role = preferences.get('current_role', '') or preferences.get('current_title', '')
+        if current_role:
+            if any(word in current_role.lower() for word in ['senior', 'lead', 'principal']):
+                focus_areas.append('leadership experience')
+            if any(word in current_role.lower() for word in ['manager', 'director']):
+                focus_areas.append('management experience')
+        
+        # Add skills as focus area if available
+        skills = self._parse_skills(preferences.get('skills', ''))
+        if skills:
+            focus_areas.append('technical skills')
+        
+        # Remove duplicates and return
+        return list(set(focus_areas)) if focus_areas else ['professional experience'] 

@@ -19,18 +19,20 @@ describe('StagehandWrapper', () => {
 
   describe('initialization', () => {
     it('should initialize successfully with Browserbase credentials', async () => {
-      // Skip if no Browserbase credentials
       const hasCredentials = process.env.BROWSERBASE_API_KEY && 
                            process.env.BROWSERBASE_PROJECT_ID && 
                            process.env.OPENAI_API_KEY;
       
-      if (!hasCredentials) {
-        console.log('Skipping Stagehand test - missing Browserbase credentials');
-        return;
+      await wrapper.initialize();
+      
+      if (hasCredentials) {
+        // Should initialize successfully when credentials are available
+        expect(wrapper.isAvailable()).toBe(true);
+      } else {
+        // Should not be available when credentials are missing
+        expect(wrapper.isAvailable()).toBe(false);
+        console.log('Stagehand not available - missing Browserbase credentials');
       }
-
-      await expect(wrapper.initialize()).resolves.not.toThrow();
-      expect(wrapper.isAvailable()).toBe(true);
     });
 
     it('should handle missing credentials gracefully', async () => {
@@ -52,12 +54,7 @@ describe('StagehandWrapper', () => {
       if (originalOpenAIKey) process.env.OPENAI_API_KEY = originalOpenAIKey;
     });
 
-    it('should initialize in test environment when credentials are available', async () => {
-      // Ensure we're in test environment (which we already are)
-      const originalNodeEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'test';
-
-      // Check if we have credentials
+    it('should initialize successfully regardless of environment', async () => {
       const hasCredentials = process.env.BROWSERBASE_API_KEY && 
                            process.env.BROWSERBASE_PROJECT_ID && 
                            process.env.OPENAI_API_KEY;
@@ -68,15 +65,8 @@ describe('StagehandWrapper', () => {
         // Should initialize successfully when credentials are available
         expect(wrapper.isAvailable()).toBe(true);
       } else {
-        // Should not initialize when credentials are missing
+        // Should not be available when credentials are missing
         expect(wrapper.isAvailable()).toBe(false);
-      }
-
-      // Restore environment
-      if (originalNodeEnv) {
-        process.env.NODE_ENV = originalNodeEnv;
-      } else {
-        delete process.env.NODE_ENV;
       }
     });
   });
@@ -115,32 +105,12 @@ describe('StagehandWrapper', () => {
   });
 
   describe('real browser automation', () => {
-    beforeAll(() => {
-      // Skip these tests if no Browserbase credentials
-      const hasCredentials = process.env.BROWSERBASE_API_KEY && 
-                           process.env.BROWSERBASE_PROJECT_ID && 
-                           process.env.OPENAI_API_KEY;
-      
-      if (!hasCredentials) {
-        console.log('Skipping real browser automation tests - missing Browserbase credentials');
-      }
-    });
 
     it('should handle basic page navigation', async () => {
-      // Skip if no credentials
-      const hasCredentials = process.env.BROWSERBASE_API_KEY && 
-                           process.env.BROWSERBASE_PROJECT_ID && 
-                           process.env.OPENAI_API_KEY;
-      
-      if (!hasCredentials) {
-        console.log('Skipping - missing Browserbase credentials');
-        return;
-      }
-
       await wrapper.initialize();
       
       if (!wrapper.isAvailable()) {
-        console.log('Skipping - Stagehand not available');
+        console.log('Skipping - Stagehand not available (missing credentials)');
         return;
       }
 
@@ -167,20 +137,10 @@ describe('StagehandWrapper', () => {
     }, 30000); // Extended timeout for browser operations
 
     it('should handle errors gracefully', async () => {
-      // Skip if no credentials
-      const hasCredentials = process.env.BROWSERBASE_API_KEY && 
-                           process.env.BROWSERBASE_PROJECT_ID && 
-                           process.env.OPENAI_API_KEY;
-      
-      if (!hasCredentials) {
-        console.log('Skipping - missing Browserbase credentials');
-        return;
-      }
-
       await wrapper.initialize();
       
       if (!wrapper.isAvailable()) {
-        console.log('Skipping - Stagehand not available');
+        console.log('Skipping - Stagehand not available (missing credentials)');
         return;
       }
 

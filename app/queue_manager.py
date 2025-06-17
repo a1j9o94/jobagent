@@ -44,6 +44,7 @@ class JobApplicationTaskPayload(BaseModel):
     credentials: Optional[Dict[str, str]] = None
     custom_answers: Optional[Dict[str, Any]] = None
     application_id: int
+    ai_instructions: Optional[Dict[str, Any]] = None
 
 
 class UpdateJobStatusTaskPayload(BaseModel):
@@ -219,7 +220,8 @@ class QueueManager:
         title: str,
         user_data: Dict[str, Any],
         credentials: Optional[Dict[str, str]] = None,
-        custom_answers: Optional[Dict[str, Any]] = None
+        custom_answers: Optional[Dict[str, Any]] = None,
+        ai_instructions: Optional[Dict[str, Any]] = None
     ) -> str:
         """Convenience method to publish a job application task."""
         payload = JobApplicationTaskPayload(
@@ -230,7 +232,8 @@ class QueueManager:
             title=title,
             user_data=user_data,
             credentials=credentials,
-            custom_answers=custom_answers
+            custom_answers=custom_answers,
+            ai_instructions=ai_instructions
         ).dict()
 
         return self.publish_task(TaskType.JOB_APPLICATION, payload)

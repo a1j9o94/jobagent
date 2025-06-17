@@ -5,14 +5,28 @@ export interface JobApplicationTask {
     title: string;
     user_data: {
         name: string;
+        first_name?: string;
+        last_name?: string;
         email: string;
         phone: string;
         resume_url?: string;
-        first_name?: string;
-        last_name?: string;
+        cover_letter_url?: string;
         linkedin_url?: string;
         github_url?: string;
         portfolio_url?: string;
+        address?: string;
+        city?: string;
+        state?: string;
+        zip_code?: string;
+        website?: string;
+        // Enhanced profile data for intelligent responses
+        experience_years?: number;
+        skills?: string[];
+        current_role?: string;
+        education?: string;
+        preferred_work_arrangement?: 'remote' | 'hybrid' | 'onsite';
+        availability?: string;
+        salary_expectation?: string;
         [key: string]: any;
     };
     credentials?: {
@@ -21,6 +35,12 @@ export interface JobApplicationTask {
     };
     custom_answers?: Record<string, any>;
     application_id: number;
+    // AI instructions for intelligent question answering
+    ai_instructions?: {
+        tone?: 'professional' | 'casual' | 'enthusiastic';
+        focus_areas?: string[]; // e.g., ['technical skills', 'leadership experience']
+        avoid_topics?: string[];
+    };
 }
 
 export interface UpdateJobStatusTask {

@@ -1,39 +1,43 @@
-# Job Agent Node.js Scraper Service
+# Job Application Node.js Service
 
-This is a TypeScript-based Node.js service that handles intelligent job application automation using [Stagehand](https://docs.stagehand.dev/). It consumes job application tasks from Redis queues and processes them using AI-powered web automation.
-
-## Architecture
-
-```
-Python FastAPI ──→ Redis Queue ──→ Node.js Service (Stagehand) ──→ Results ──→ Python FastAPI
-```
-
-### Key Components
-
-- **Queue Consumer**: Main entry point that listens for job application tasks
-- **Application Processor**: Orchestrates the job application workflow
-- **Stagehand Wrapper**: Handles intelligent web automation using Stagehand
-- **Redis Manager**: Manages queue communication with the Python service
+This service handles automated job applications using Stagehand's AI-powered browser automation. It features dynamic form processing, intelligent question answering, and multi-step application support.
 
 ## Features
 
-- **Intelligent Form Filling**: Uses Stagehand's AI capabilities to understand and fill job application forms
-- **Multi-step Applications**: Handles complex application workflows with multiple pages
-- **Human-in-the-Loop**: Detects when human input is needed and requests approval
-- **Error Recovery**: Implements retry logic with exponential backoff
-- **Screenshot Capture**: Takes screenshots for debugging and approval workflows
-- **Type Safety**: Full TypeScript implementation with comprehensive type definitions
+### 🤖 Enhanced AI-Powered Automation
+- **Dynamic Form Analysis**: Automatically detects and adapts to different application form layouts
+- **Agentic Question Answering**: Uses AI to intelligently answer company-specific questions
+- **Multi-Step Application Support**: Handles complex, multi-page application workflows
+- **Smart Navigation**: Finds and clicks apply buttons across various job board layouts
 
-## Queue Communication
+### 🔄 Intelligent Processing Loop
+- **Adaptive Form Processing**: Analyzes each form step and fills fields appropriately  
+- **Context-Aware Responses**: Generates answers based on user profile and job context
+- **Graceful Fallback**: Requests human approval when automation isn't possible
+- **Session State Management**: Maintains state across form steps and page transitions
 
-### Task Types
+### 📋 Comprehensive Field Handling
+- **Standard Fields**: Name, email, phone, address, social links
+- **File Uploads**: Resume and cover letter handling (with manual fallback)
+- **Custom Questions**: AI-powered responses to company-specific questions
+- **Field Type Detection**: Supports text, select, radio, checkbox, date fields
 
-1. **`job_application`** (Python → Node.js): Job application requests
-2. **`update_job_status`** (Node.js → Python): Status updates
-3. **`approval_request`** (Node.js → Python): Human approval needed
+## Architecture
 
-### Task Flow
+```mermaid
+graph TD
+    A[Python FastAPI] -->|Job Application Task| B[Redis Queue]
+    B --> C[Node.js Service]
+    C --> D[Enhanced StagehandWrapper]
+    D --> E[Browserbase + Stagehand]
+    E -->|Success/Failure/Approval Needed| F[Redis Queue]
+    F --> G[Python Service]
+    G --> H[SMS Notification]
+```
 
+## Enhanced Task Structure
+
+### JobApplicationTask Interface
 ```typescript
 interface JobApplicationTask {
     job_id: number;
@@ -41,234 +45,211 @@ interface JobApplicationTask {
     company: string;
     title: string;
     user_data: {
+        // Basic info
         name: string;
+        first_name?: string;
+        last_name?: string;
         email: string;
         phone: string;
+        
+        // Documents
         resume_url?: string;
-        // ... other fields
+        cover_letter_url?: string;
+        
+        // Contact info
+        linkedin_url?: string;
+        github_url?: string;
+        portfolio_url?: string;
+        address?: string;
+        city?: string;
+        state?: string;
+        zip_code?: string;
+        
+        // Profile data for intelligent responses
+        experience_years?: number;
+        skills?: string[];
+        current_role?: string;
+        education?: string;
+        preferred_work_arrangement?: 'remote' | 'hybrid' | 'onsite';
+        availability?: string;
+        salary_expectation?: string;
     };
     credentials?: {
         username: string;
         password: string;
     };
+    custom_answers?: Record<string, any>;
+    application_id: number;
+    ai_instructions?: {
+        tone?: 'professional' | 'casual' | 'enthusiastic';
+        focus_areas?: string[];
+        avoid_topics?: string[];
+    };
 }
 ```
 
-## Development Setup
+## How It Works
 
-### Prerequisites
-
-- Node.js 20+
-- npm or yarn
-- Redis (running via Docker Compose)
-
-### Installation
-
-```bash
-# Install dependencies
-npm install
-
-# Copy environment config
-cp .env.example .env
-
-# Build TypeScript
-npm run build
-
-# Run in development mode (with hot reload)
-npm run dev
-
-# Run in production mode
-npm start
-```
-
-### Environment Variables
-
-```bash
-# Redis Configuration
-NODE_REDIS_URL=redis://redis:6379/0
-
-# Stagehand Configuration
-STAGEHAND_HEADLESS=true
-STAGEHAND_TIMEOUT=30000
-
-# Browser Configuration
-BROWSER_VIEWPORT_WIDTH=1280
-BROWSER_VIEWPORT_HEIGHT=720
-
-# Logging
-LOG_LEVEL=info
-```
-
-## Docker Usage
-
-### Development
-
-```bash
-# Run with Docker Compose (from project root)
-docker-compose up node-scraper
-
-# Build and run standalone
-docker build -t jobagent-node-scraper .
-docker run -e NODE_REDIS_URL=redis://host.docker.internal:6379 jobagent-node-scraper
-```
-
-### Production
-
-The service is automatically built and deployed as part of the main application stack.
-
-## Application Processing Flow
-
-1. **Task Reception**: Listens for `job_application` tasks from Redis
-2. **Navigation**: Uses Stagehand to navigate to the job URL
-3. **Form Analysis**: Analyzes the application form using AI
-4. **Authentication**: Handles login if credentials are provided
-5. **Form Filling**: Intelligently fills form fields with user data
-6. **Submission**: Submits the application and captures confirmation
-7. **Result Publishing**: Sends status updates back to Python service
-
-### Automation Capabilities
-
-- **Smart Form Detection**: Identifies form fields automatically
-- **Multi-page Handling**: Navigates through multi-step applications
-- **File Upload Detection**: Identifies when resume upload is needed
-- **Error Detection**: Recognizes failed submissions and retries
-- **Success Verification**: Confirms successful application submission
-
-## Error Handling
-
-### Retry Logic
-
-- **Exponential Backoff**: Delays increase with each retry (1s, 2s, 4s, ...)
-- **Maximum Retries**: Configurable (default: 3 attempts)
-- **Error Categories**: Different handling for network vs. automation errors
-
-### Human Intervention
-
-When the automation encounters scenarios requiring human input:
-
-1. **Approval Request**: Publishes task with question details
-2. **State Preservation**: Saves current page state for continuation
-3. **Screenshot Capture**: Takes screenshot for user context
-4. **SMS Notification**: Python service sends SMS to user
-
-## Monitoring and Health Checks
-
-### Health Check Endpoint
-
-The service exposes health check functionality:
-
+### 1. Dynamic Page Detection
 ```typescript
-const health = await service.healthCheck();
-// Returns: { status: 'healthy'|'unhealthy', details: {...} }
-```
-
-### Logging
-
-Structured logging with Winston:
-
-```typescript
-logger.info('Processing job application', {
-    taskId: 'task_123',
-    jobId: 456,
-    company: 'Example Corp'
+// Analyzes each page to determine:
+// - Whether it's a job description or application form
+// - If clicking "Apply" redirects to another page  
+// - Multi-step form detection with progress tracking
+const pageAnalysis = await page.extract({
+    instruction: "Analyze this page to determine if it's a job description, application form, or something else...",
+    schema: PageAnalysisSchema
 });
 ```
 
-### Metrics
-
-- Queue lengths and processing times
-- Success/failure rates
-- Retry statistics
-- Memory and performance metrics
-
-## Integration with Python Service
-
-### Task Publishing (Python)
-
-```python
-from app.queue_manager import QueueManager
-
-queue = QueueManager()
-await queue.publish_task(TaskType.JOB_APPLICATION, {
-    "job_id": 123,
-    "job_url": "https://company.com/jobs/456",
-    "user_data": user_data
-})
+### 2. Agentic Form Processing Loop
+```typescript
+while (currentStepAttempts < maxStepAttempts && maxSteps > 0) {
+    // 1. Analyze current form state
+    const formAnalysis = await page.extract({
+        instruction: "Analyze the current application form...",
+        schema: DynamicFormAnalysisSchema
+    });
+    
+    // 2. Fill standard fields
+    await this.fillStandardFields(formAnalysis.fields, task.user_data);
+    
+    // 3. Process custom questions with AI
+    await this.processCustomQuestions(formAnalysis.customQuestions, task.user_data);
+    
+    // 4. Navigate to next step or submit
+    const navResult = await this.proceedToNextStepOrSubmit(formAnalysis);
+    
+    if (navResult.completed) {
+        return { success: true, confirmation_message: "..." };
+    }
+}
 ```
 
-### Result Consumption (Python)
+### 3. Smart Question Handling
+```typescript
+// For unknown questions, the system:
+// 1. Analyzes the question context using AI
+const questionAnalysis = await page.extract({
+    instruction: `Analyze this question: "${question}". Consider the user's background: ${userData.current_role}, ${userData.experience_years} years experience...`,
+    schema: QuestionAnalysisSchema
+});
 
-```python
-# Listen for status updates
-result = await queue.consume_task(TaskType.UPDATE_JOB_STATUS)
-# Process application status update
+// 2. Attempts to generate appropriate responses
+if (questionAnalysis.suggestedAnswer) {
+    await page.act(`answer the question "${question}" with "${questionAnalysis.suggestedAnswer}"`);
+}
+
+// 3. Falls back to human approval when needed
+if (questionAnalysis.needsHumanInput) {
+    return { needsApproval: true, question: question };
+}
 ```
 
-## Testing
-
-### Unit Tests
+## Environment Variables
 
 ```bash
+# Browserbase Configuration
+BROWSERBASE_API_KEY=your_browserbase_api_key
+BROWSERBASE_PROJECT_ID=your_project_id
+OPENAI_API_KEY=your_openai_api_key
+
+# Redis Configuration
+REDIS_URL=redis://localhost:6379
+
+# Browser Configuration
+STAGEHAND_HEADLESS=true
+STAGEHAND_TIMEOUT=30000
+BROWSER_VIEWPORT_WIDTH=1280
+BROWSER_VIEWPORT_HEIGHT=720
+BROWSER_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+
+# Processing Configuration
+MAX_RETRIES=3
+```
+
+## Setup & Development
+
+### Installation
+```bash
+npm install
+```
+
+### Testing
+```bash
+# Run all tests
 npm test
+
+# Run specific test files
+npm test -- src/stagehand-wrapper.test.ts
+npm test -- src/application-processor.test.ts
+
+# Run integration tests
+npm test -- src/test/integration.test.ts
 ```
 
-### Integration Tests
-
+### Development
 ```bash
-# Run with test Redis instance
-npm run test:integration
+# Start in development mode with hot reload
+npm run dev
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
 ```
 
-### Manual Testing
+## Key Benefits
 
-```bash
-# Test with sample job application
-npm run test:manual
+### 🚀 **Handles Variable Forms**
+Adapts to different application layouts and field types across job boards
+
+### 🧠 **Intelligent Responses** 
+Uses AI to answer company-specific questions appropriately based on user profile
+
+### 📈 **Multi-step Support**
+Navigates through complex, multi-page applications automatically
+
+### 🔄 **Graceful Fallback**
+Requests human approval when automation isn't possible, with screenshots
+
+### 📊 **Session Tracking**
+Maintains state across form steps and page transitions
+
+### ⚡ **Scalable Architecture**
+Event-driven design with Redis queues for reliable task processing
+
+## Monitoring & Health Checks
+
+The service provides comprehensive monitoring:
+
+```typescript
+// Health check endpoint provides:
+{
+    status: 'healthy' | 'unhealthy',
+    details: {
+        redis: boolean,
+        isProcessing: boolean,
+        queueStats: { ... },
+        maxRetries: number
+    }
+}
 ```
 
-## Performance Considerations
+## Error Handling
 
-- **Browser Reuse**: Stagehand browsers are reused when possible
-- **Memory Management**: Automatic cleanup of browser instances
-- **Concurrent Processing**: Multiple applications can be processed simultaneously
-- **Resource Limits**: Configurable memory and timeout limits
+- **Retry Logic**: Exponential backoff for transient failures
+- **Dead Letter Queues**: Failed tasks are tracked and can be replayed
+- **Screenshot Capture**: Automatic screenshots on failures for debugging
+- **Structured Logging**: Comprehensive logging for monitoring and debugging
 
-## Deployment
+## Production Deployment
 
-The service is deployed as part of the main application stack:
+The service runs in Docker containers and can be deployed to:
+- **Fly.io** (current production setup)
+- **AWS ECS/Fargate**
+- **Google Cloud Run**
+- **Azure Container Instances**
 
-- **Docker Compose**: Local development
-- **Fly.io**: Production deployment
-- **Health Checks**: Automatic service monitoring
-- **Graceful Shutdown**: Proper cleanup on termination
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Redis Connection**: Check `NODE_REDIS_URL` configuration
-2. **Browser Issues**: Ensure Chrome/Chromium is available
-3. **Memory Leaks**: Monitor browser instance cleanup
-4. **Network Timeouts**: Adjust `STAGEHAND_TIMEOUT` setting
-
-### Debugging
-
-1. **Enable Debug Logging**: Set `LOG_LEVEL=debug`
-2. **Screenshot Analysis**: Check captured screenshots
-3. **Queue Inspection**: Monitor Redis queue contents
-4. **Health Checks**: Use health check endpoint for diagnostics
-
-## Contributing
-
-1. Follow TypeScript best practices
-2. Add comprehensive type definitions
-3. Include unit tests for new features
-4. Update documentation for API changes
-5. Test integration with Python service
-
-## Links
-
-- [Stagehand Documentation](https://docs.stagehand.dev/)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
-- [Redis Node.js Client](https://redis.js.org/)
-- [Winston Logging](https://github.com/winstonjs/winston) 
+The **Stagehand** library proves to be absolutely **perfect** for this use case because it combines the reliability of Playwright with AI-powered natural language understanding, making it ideal for handling the unpredictable nature of job application forms across different companies and platforms. 
