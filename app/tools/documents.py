@@ -15,7 +15,7 @@ from app.tools.notifications import send_sms_message
 logger = logging.getLogger(__name__)
 
 resume_agent = Agent(
-    "openai:gpt-4o-mini",
+    "openai:gpt-4o",
     result_type=ResumeDraft,
     model_settings=ModelSettings(
         parallel_tool_calls=False,
@@ -82,6 +82,9 @@ async def draft_and_upload_documents(application_id: int) -> Dict[str, Any]:
             
             Make the resume ATS-friendly and the cover letter compelling but concise.
             Focus on the specific requirements and skills mentioned above.
+            The resume should be concise and formatted to fit on a single page. You have lots of information about the candidate, so only include the most relevant information for the job.
+            The cover letter should not include any placeholders.
+            The documents will be submitted as-is.
             """
 
             # Try with retry logic for pydantic AI agent

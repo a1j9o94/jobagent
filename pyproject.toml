@@ -92,6 +92,7 @@ destroy-local = "docker compose down -v --remove-orphans"
 alembic-upgrade = "alembic upgrade head"
 alembic-revision = "alembic revision --autogenerate -m"
 migrate = "bash migrate.sh"
+update-secrets = "bash update_secrets.sh"
 
 [tool.poe.tasks.run-local]
 shell = """

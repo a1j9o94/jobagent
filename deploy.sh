@@ -220,18 +220,30 @@ SECRETS_TO_SET=()
 
 # Check for PROFILE_INGEST_API_KEY
 if ! echo "$EXISTING_SECRETS" | grep -q "^PROFILE_INGEST_API_KEY "; then
-    NEW_API_KEY=$(openssl rand -hex 32)
-    SECRETS_TO_SET+=("PROFILE_INGEST_API_KEY=${NEW_API_KEY}")
-    DISPLAY_API_KEY=$NEW_API_KEY # Store for displaying later
-    print_warning "Generated new PROFILE_INGEST_API_KEY."
+    # Check if user provided one in .env.fly first
+    if [ -n "${PROFILE_INGEST_API_KEY:-}" ] && [ "${PROFILE_INGEST_API_KEY}" != "your-profile-api-key" ]; then
+        SECRETS_TO_SET+=("PROFILE_INGEST_API_KEY=${PROFILE_INGEST_API_KEY}")
+        print_success "Using PROFILE_INGEST_API_KEY from .env.fly"
+    else
+        NEW_API_KEY=$(openssl rand -hex 32)
+        SECRETS_TO_SET+=("PROFILE_INGEST_API_KEY=${NEW_API_KEY}")
+        DISPLAY_API_KEY=$NEW_API_KEY # Store for displaying later
+        print_warning "Generated new PROFILE_INGEST_API_KEY."
+    fi
 else
     print_success "PROFILE_INGEST_API_KEY already set."
 fi
 
 # Check for ENCRYPTION_KEY
 if ! echo "$EXISTING_SECRETS" | grep -q "^ENCRYPTION_KEY "; then
-    SECRETS_TO_SET+=("ENCRYPTION_KEY=$(openssl rand -base64 32)")
-    print_warning "Generated new ENCRYPTION_KEY."
+    # Check if user provided one in .env.fly first
+    if [ -n "${ENCRYPTION_KEY:-}" ] && [ "${ENCRYPTION_KEY}" != "your-encryption-key" ]; then
+        SECRETS_TO_SET+=("ENCRYPTION_KEY=${ENCRYPTION_KEY}")
+        print_success "Using ENCRYPTION_KEY from .env.fly"
+    else
+        SECRETS_TO_SET+=("ENCRYPTION_KEY=$(openssl rand -base64 32)")
+        print_warning "Generated new ENCRYPTION_KEY."
+    fi
 else
     print_success "ENCRYPTION_KEY already set."
 fi
@@ -315,8 +327,12 @@ print_status "Updating fly.toml configuration..."
 if [ -n "$BUCKET_NAME" ]; then
     # Clean the bucket name to remove any whitespace or newlines
     CLEAN_BUCKET_NAME=$(echo "$BUCKET_NAME" | tr -d '\n\r' | xargs)
-    sed -i.bak "s/S3_BUCKET_NAME = \".*\"/S3_BUCKET_NAME = \"$CLEAN_BUCKET_NAME\"/" fly.toml
-    print_success "Updated S3_BUCKET_NAME in fly.toml to: $CLEAN_BUCKET_NAME"
+    if [ -n "$CLEAN_BUCKET_NAME" ]; then
+        sed -i.bak "s/S3_BUCKET_NAME = \".*\"/S3_BUCKET_NAME = \"${CLEAN_BUCKET_NAME}\"/" fly.toml
+        print_success "Updated S3_BUCKET_NAME in fly.toml to: $CLEAN_BUCKET_NAME"
+    else
+        print_warning "BUCKET_NAME is empty after cleaning, skipping fly.toml update"
+    fi
 fi
 
 # Update API_BASE_URL in fly.toml
