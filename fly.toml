@@ -40,7 +40,7 @@ primary_region = "sea"  # Change to your preferred region (sea, ord, fra, etc.)
   STORAGE_PROVIDER = "tigris"
   API_BASE_URL = "https://jobagent.fly.dev"
   S3_ENDPOINT_URL = "https://fly.storage.tigris.dev"
-  S3_BUCKET_NAME = "a09d1fee41581eeda09d1fee41581eed"
+  S3_BUCKET_NAME = "edcc028e119eb9f4edcc028e119eb9f4"
   
   # Node.js Service Configuration
   NODE_ENV = "production"
